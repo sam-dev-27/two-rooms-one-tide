@@ -1,0 +1,24 @@
+{
+  "name": "two-rooms-one-tide",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Two people, two rooms, one tide. A point-and-click escape mystery made for the DreamLayer Game Jam.",
+  "type": "module",
+  "scripts": {
+    "serve": "python3 -m http.server 8000",
+    "test": "node tools/test-chain.mjs",
+    "assets:balance": "dreamlayer balance",
+    "assets:test": "node tools/generate.mjs --group test",
+    "assets:rooms": "node tools/generate.mjs --group rooms",
+    "assets:characters": "node tools/generate.mjs --group characters",
+    "assets:items": "node tools/generate.mjs --group items",
+    "assets:ui": "node tools/generate.mjs --group ui",
+    "assets:dry": "node tools/generate.mjs --all --dry-run",
+    "build:itch": "sh tools/package-itch.sh"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "dreamlayer": "^0.3.0",
+    "phaser": "^3.90.0"
+  }
+}

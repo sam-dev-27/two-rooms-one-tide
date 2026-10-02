@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Submission strips</title>
+    <style>
+      body { background: #0b1016; color: #f3e6c8; font-family: Georgia, serif; margin: 24px; }
+      h2 { color: #d9a441; font-weight: normal; margin-top: 36px; }
+      canvas { max-width: 100%; border: 1px solid #2c4052; display: block; margin: 8px 0; }
+      button { background: #1c2a37; color: #f3e6c8; border: 0; padding: 8px 14px; font: inherit; cursor: pointer; }
+      p { color: #9fb3c1; }
+    </style>
+  </head>
+  <body>
+    <h1>Submission strips</h1>
+    <p>Builds the "edit-chain" and "reference vs in-game" images for the jam page. Serve the project root
+      (<code>npm run serve</code>) and open <code>/tools/strip.html</code>. Missing images are skipped.
+      For the in-game column, save a screenshot as <code>docs/shots/mara_ingame.png</code>.</p>
+    <div id="out"></div>
+    <script type="module">
+      const STRIPS = [
+        { name: 'edit-chain-lamp', title: 'Edit chain: lamp room', items: [['assets/rooms/lamp_before.png', 'Base generation'], ['assets/rooms/lamp_after.png', 'Edit: "same room... now the lamp is lit"']] },
+        { name: 'edit-chain-cellar', title: 'Edit chain: cellar', items: [['assets/rooms/cellar_before.png', 'Base generation'], ['assets/rooms/cellar_after.png', 'Edit: "same room... now flooded"']] },
+        { name: 'reference-mara', title: 'Mara: reference to in-game', items: [['tools/raw/mara_raw.png', 'Approved reference'], ['assets/characters/mara_act.png', 'Pose edit + cutout'], ['docs/shots/mara_ingame.png', 'In game']] },
+        { name: 'reference-tobin', title: 'Tobin: reference to in-game', items: [['tools/raw/tobin_raw.png', 'Approved reference'], ['assets/characters/tobin_act.png', 'Pose edit + cutout'], ['docs/shots/tobin_ingame.png', 'In game']] },
+      ];
+      const load = (src) => new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = `/${src}?v=${Date.now()}`;
+      });
+      const H = 420, GAP = 24, LABEL = 46;
+      for (const strip of STRIPS) {
+        const loaded = (await Promise.all(strip.items.map(async ([src, label]) => ({ img: await load(src), label })))).filter((x) => x.img);
+        if (loaded.length < 2) continue;
+        const widths = loaded.map(({ img }) => Math.round((img.width / img.height) * H));
+        const canvas = document.createElement('canvas');
+        canvas.width = widths.reduce((a, b) => a + b, 0) + GAP * (loaded.length + 1);
+        canvas.height = H + LABEL + GAP * 2;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#0b1016';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        let x = GAP;
+        loaded.forEach(({ img, label }, i) => {
+          ctx.drawImage(img, x, GAP, widths[i], H);
+          ctx.fillStyle = '#f3e6c8';
+          ctx.font = '22px Georgia';
+          ctx.fillText(label, x, GAP + H + 32);
+          if (i < loaded.length - 1) {
+            ctx.fillStyle = '#d9a441';
+            ctx.font = '28px Georgia';
+            ctx.fillText('>', x + widths[i] + 4, GAP + H / 2);
+          }
+          x += widths[i] + GAP;
+        });
+        const section = document.createElement('section');
+        section.innerHTML = `<h2>${strip.title}</h2>`;
+        const btn = document.createElement('button');
+        btn.textContent = `Download ${strip.name}.png`;
+        btn.onclick = () => {
+          const a = document.createElement('a');
+          a.download = `${strip.name}.png`;
+          a.href = canvas.toDataURL('image/png');
+          a.click();
+        };
+        section.append(canvas, btn);
+        document.getElementById('out').append(section);
+      }
+      if (!document.getElementById('out').children.length) {
+        document.getElementById('out').innerHTML = '<p>No generated art found yet. Run the DreamLayer pipeline first.</p>';
+      }
+    </script>
+  </body>
+</html>

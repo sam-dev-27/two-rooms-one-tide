@@ -1,0 +1,139 @@
+{
+  "style": "Painterly storybook illustration, muted sea-teal and lamp-amber palette, soft directional light, visible brush texture, clean dark ink linework, quiet melancholic mood, no text, no watermark",
+  "notes": "Lock the style line after the consistency test and never change it again. [style] in a prompt is replaced with this line. Each call takes at most one reference image (ref).",
+  "assets": [
+    {
+      "id": "lamp_before",
+      "groups": ["test", "rooms"],
+      "op": "generate",
+      "aspect": "16:9",
+      "out": "assets/rooms/lamp_before.png",
+      "prompt": "[style]. Interior of a lighthouse lamp room at dusk, fixed wide camera at eye level, a large unlit brass lamp in the center, a wooden writing desk with a drawer and an open logbook on the left, a tall window on the right showing a grey rising sea, a small wooden dumbwaiter hatch in the lower left wall, a narrow balcony door far right. Empty room, no people."
+    },
+    {
+      "id": "lamp_after",
+      "groups": ["test", "rooms"],
+      "op": "edit",
+      "ref": "lamp_before",
+      "out": "assets/rooms/lamp_after.png",
+      "prompt": "Same room, same camera, same furniture positions. Now the brass lamp is lit and blazing with warm amber light, and a storm with high waves is visible through the window. Change only the lighting and the view outside. Do not move any furniture."
+    },
+    {
+      "id": "cellar_before",
+      "groups": ["rooms"],
+      "op": "generate",
+      "aspect": "16:9",
+      "out": "assets/rooms/cellar_before.png",
+      "prompt": "[style]. Interior of a stone lighthouse cellar, fixed wide camera at eye level, a row of four iron valve wheels on a pipe on the left wall, a steel locker with a brass padlock in the center back, a wooden supply crate on the right, a small wooden dumbwaiter hatch in the upper right wall, chalk scratches on the stone wall near the stairs, loose wooden floorboards. Dry floor, empty room, no people."
+    },
+    {
+      "id": "cellar_after",
+      "groups": ["rooms"],
+      "op": "edit",
+      "ref": "cellar_before",
+      "out": "assets/rooms/cellar_after.png",
+      "prompt": "Same room, same camera, same furniture positions. Now flooded with dark sea water at knee height, dim cold light, one floorboard floating up near the center to reveal a dark hollow under it. Change only that. Do not move any furniture."
+    },
+
+    {
+      "id": "mara_raw",
+      "groups": ["test", "characters"],
+      "op": "generate",
+      "aspect": "3:4",
+      "out": "tools/raw/mara_raw.png",
+      "prompt": "[style]. A woman lighthouse keeper in her 30s, short dark hair, red wool scarf, long grey wool coat, brass lantern in her right hand, standing, full body, facing three-quarters toward the viewer, plain white background."
+    },
+    {
+      "id": "mara",
+      "groups": ["test", "characters"],
+      "op": "cutout",
+      "ref": "mara_raw",
+      "out": "assets/characters/mara.png"
+    },
+    {
+      "id": "mara_act_raw",
+      "groups": ["test", "characters"],
+      "op": "edit",
+      "ref": "mara_raw",
+      "out": "tools/raw/mara_act_raw.png",
+      "prompt": "Keep this exact character, same face, same red scarf, same grey coat, same lantern. Now crouching slightly and reaching forward with her free hand, full body, plain white background."
+    },
+    {
+      "id": "mara_act",
+      "groups": ["test", "characters"],
+      "op": "cutout",
+      "ref": "mara_act_raw",
+      "out": "assets/characters/mara_act.png"
+    },
+    {
+      "id": "tobin_raw",
+      "groups": ["characters"],
+      "op": "generate",
+      "aspect": "3:4",
+      "out": "tools/raw/tobin_raw.png",
+      "prompt": "[style]. A young harbour clerk in his 20s, messy ginger hair, round spectacles, mustard knitted sweater under a dark oilskin jacket, rolled-up trousers and rubber boots, standing, full body, facing three-quarters toward the viewer, plain white background."
+    },
+    {
+      "id": "tobin",
+      "groups": ["characters"],
+      "op": "cutout",
+      "ref": "tobin_raw",
+      "out": "assets/characters/tobin.png"
+    },
+    {
+      "id": "tobin_act_raw",
+      "groups": ["characters"],
+      "op": "edit",
+      "ref": "tobin_raw",
+      "out": "tools/raw/tobin_act_raw.png",
+      "prompt": "Keep this exact character, same face, same spectacles, same mustard sweater, same oilskin jacket. Now leaning forward and reaching out with both hands, full body, plain white background."
+    },
+    {
+      "id": "tobin_act",
+      "groups": ["characters"],
+      "op": "cutout",
+      "ref": "tobin_act_raw",
+      "out": "assets/characters/tobin_act.png"
+    },
+
+    { "id": "key_raw", "groups": ["items"], "op": "generate", "aspect": "1:1", "out": "tools/raw/key_raw.png", "prompt": "[style]. A single ornate brass key, game inventory icon, centered, plain white background." },
+    { "id": "key", "groups": ["items"], "op": "cutout", "ref": "key_raw", "out": "assets/items/key.png" },
+    { "id": "fuse_raw", "groups": ["items"], "op": "generate", "aspect": "1:1", "out": "tools/raw/fuse_raw.png", "prompt": "[style]. A single old ceramic and copper cartridge fuse, game inventory icon, centered, plain white background." },
+    { "id": "fuse", "groups": ["items"], "op": "cutout", "ref": "fuse_raw", "out": "assets/items/fuse.png" },
+    { "id": "page_a_raw", "groups": ["items"], "op": "generate", "aspect": "1:1", "out": "tools/raw/page_a_raw.png", "prompt": "[style]. The top half of a yellowed handwritten logbook page with a torn bottom edge, game inventory icon, centered, plain white background." },
+    { "id": "page_a", "groups": ["items"], "op": "cutout", "ref": "page_a_raw", "out": "assets/items/page_a.png" },
+    { "id": "page_b_raw", "groups": ["items"], "op": "edit", "ref": "page_a_raw", "out": "tools/raw/page_b_raw.png", "prompt": "Same paper, same handwriting, same style. Now show the bottom half of the page with a torn top edge, slightly water-stained." },
+    { "id": "page_b", "groups": ["items"], "op": "cutout", "ref": "page_b_raw", "out": "assets/items/page_b.png" },
+    { "id": "valve_order_raw", "groups": ["items"], "op": "edit", "ref": "page_a_raw", "out": "tools/raw/valve_order_raw.png", "prompt": "Same paper, same handwriting, same style. Now show the full page, torn in two and held together, with four small coloured circles drawn in a row." },
+    { "id": "valve_order", "groups": ["items"], "op": "cutout", "ref": "valve_order_raw", "out": "assets/items/valve_order.png" },
+    { "id": "photo_raw", "groups": ["items"], "op": "generate", "aspect": "1:1", "out": "tools/raw/photo_raw.png", "prompt": "[style]. A small damp black-and-white photograph showing a man in a captain's coat on a dock beside a sinking boat, game inventory icon, centered, plain white background." },
+    { "id": "photo", "groups": ["items"], "op": "cutout", "ref": "photo_raw", "out": "assets/items/photo.png" },
+    { "id": "ledger_raw", "groups": ["items"], "op": "generate", "aspect": "1:1", "out": "tools/raw/ledger_raw.png", "prompt": "[style]. A small leather-bound account ledger tied with string, game inventory icon, centered, plain white background." },
+    { "id": "ledger", "groups": ["items"], "op": "cutout", "ref": "ledger_raw", "out": "assets/items/ledger.png" },
+
+    {
+      "id": "title",
+      "groups": ["ui"],
+      "op": "generate",
+      "aspect": "16:9",
+      "out": "assets/ui/title.png",
+      "prompt": "[style]. A lone lighthouse on a rocky island at dusk, cut away like a dollhouse to show a lit lamp room at the top and a dark half-flooded cellar at the bottom, a storm gathering, wide cinematic composition, empty sky in the upper third for a title."
+    },
+    {
+      "id": "ending_truth",
+      "groups": ["ui"],
+      "op": "edit",
+      "ref": "title",
+      "out": "assets/ui/ending_truth.png",
+      "prompt": "Same lighthouse, same camera. Now at dawn after the storm, calm sea, the lamp beam reaching a coastguard ship close to the rocks, hopeful warm light."
+    },
+    {
+      "id": "ending_cover",
+      "groups": ["ui"],
+      "op": "edit",
+      "ref": "title",
+      "out": "assets/ui/ending_cover.png",
+      "prompt": "Same lighthouse, same camera. Now at grey dawn after the storm, flat cold light, a single rowboat leaving the island, the lamp dark, a quiet uneasy mood."
+    }
+  ]
+}
