@@ -56,7 +56,7 @@
       "op": "edit",
       "ref": "mara_raw",
       "out": "tools/raw/mara_act_raw.png",
-      "prompt": "Keep this exact character, same face, same red scarf, same grey coat, same lantern. Now crouching slightly and reaching forward with her free hand, full body, plain white background."
+      "prompt": "Keep this exact character and outfit: red wool scarf, long grey wool coat, brass lantern in one hand. Now leaning forward to examine something, other arm extended, full body, plain white background."
     },
     {
       "id": "mara_act",

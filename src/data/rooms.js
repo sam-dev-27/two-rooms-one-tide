@@ -11,14 +11,14 @@ export const ROOMS = {
   lamp: {
     name: 'The Lamp Room',
     // x, y = feet position; h = on-screen height in pixels.
-    char: { x: 840, y: 660, h: 430 },
+    char: { x: 860, y: 655, h: 400 },
     hotspots: [
-      { id: 'logbook', label: 'Logbook', x: 140, y: 350, w: 220, h: 90 },
-      { id: 'drawer', label: 'Desk drawer', x: 150, y: 450, w: 200, h: 80 },
-      { id: 'lamp', label: 'Great lamp', x: 500, y: 110, w: 260, h: 380 },
-      { id: 'window', label: 'Window', x: 970, y: 110, w: 180, h: 340 },
-      { id: 'balcony', label: 'Balcony door', x: 1170, y: 170, w: 100, h: 440 },
-      { id: 'hatch_lamp', handler: 'hatch', label: 'Dumbwaiter hatch', x: 30, y: 520, w: 120, h: 110 },
+      { id: 'logbook', label: 'Logbook', x: 150, y: 355, w: 200, h: 70 },
+      { id: 'drawer', label: 'Desk drawer', x: 225, y: 430, w: 150, h: 65 },
+      { id: 'lamp', label: 'Great lamp', x: 495, y: 50, w: 295, h: 450 },
+      { id: 'window', label: 'Window', x: 890, y: 75, w: 200, h: 390 },
+      { id: 'balcony', label: 'Balcony door', x: 1150, y: 125, w: 105, h: 505 },
+      { id: 'hatch_lamp', handler: 'hatch', label: 'Dumbwaiter hatch', x: 385, y: 425, w: 125, h: 95 },
     ],
   },
   cellar: {

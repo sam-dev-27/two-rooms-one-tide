@@ -100,7 +100,8 @@ export default class GameScene extends Phaser.Scene {
     const { x, y, h } = ROOMS[state.room].char;
     this.tweens.killTweensOf(this.character);
     this.character.setTexture(textureKey).setPosition(x, y);
-    const scale = h / this.character.height;
+    // Poses share the idle pose's scale so the figure doesn't change size between them.
+    const scale = h / this.textures.get(state.active).getSourceImage().height;
     this.character.setScale(scale);
     this.tweens.add({ targets: this.character, scaleY: scale * 1.012, duration: 1800, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
   }

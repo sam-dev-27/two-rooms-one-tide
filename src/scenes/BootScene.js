@@ -1,6 +1,7 @@
 import { WIDTH, HEIGHT, FONT, COLORS } from '../config.js';
 import { ROOM_IMAGES, CHARACTER_IMAGES, ITEM_IMAGES, UI_IMAGES, AUDIO } from '../data/assets.js';
 import { makePlaceholder } from '../systems/Placeholders.js';
+import { trimTexture } from '../systems/TextureTools.js';
 import { sfx } from '../systems/Sfx.js';
 
 const IMAGE_GROUPS = [
@@ -10,27 +11,39 @@ const IMAGE_GROUPS = [
   ['screen', UI_IMAGES],
 ];
 
+const TRIM = { character: { maxSourceSize: 1024 }, item: { maxSourceSize: 384 } };
+
 export default class BootScene extends Phaser.Scene {
   constructor() {
     super('Boot');
   }
 
   preload() {
-    // The packaged build ships assets/manifest.json listing the files that exist, which avoids
-    // 404s for optional assets. In development it's absent and everything is attempted.
+    // The packaged build ships assets/manifest.json listing the files that exist (with large
+    // PNGs converted to JPEG). In development it's absent and every listed path is attempted.
     this.load.json('manifest', 'assets/manifest.json');
   }
 
   create() {
     const manifest = this.cache.json.get('manifest');
-    const exists = (path) => !Array.isArray(manifest) || manifest.includes(path);
+    const resolve = (path) => {
+      if (!Array.isArray(manifest) || manifest.includes(path)) return path;
+      const jpg = path.replace(/\.png$/, '.jpg');
+      return manifest.includes(jpg) ? jpg : null;
+    };
 
     this.drawProgress();
 
     for (const [, files] of IMAGE_GROUPS) {
-      for (const [key, path] of Object.entries(files)) if (exists(path)) this.load.image(key, path);
+      for (const [key, path] of Object.entries(files)) {
+        const found = resolve(path);
+        if (found) this.load.image(key, found);
+      }
     }
-    for (const [key, path] of Object.entries(AUDIO)) if (exists(path)) this.load.audio(key, path);
+    for (const [key, path] of Object.entries(AUDIO)) {
+      const found = resolve(path);
+      if (found) this.load.audio(key, found);
+    }
 
     this.load.once('complete', () => this.finish());
     this.load.start();
@@ -49,7 +62,9 @@ export default class BootScene extends Phaser.Scene {
     const missing = new Set();
     for (const [group, files] of IMAGE_GROUPS) {
       for (const key of Object.keys(files)) {
-        if (!this.textures.exists(key)) {
+        if (this.textures.exists(key)) {
+          if (TRIM[group]) trimTexture(this, key, TRIM[group]);
+        } else {
           makePlaceholder(this, key, group);
           missing.add(key);
         }
