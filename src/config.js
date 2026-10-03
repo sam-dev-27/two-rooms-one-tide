@@ -14,3 +14,7 @@ export const COLORS = {
 };
 
 export const HINT_DELAY_MS = 60_000;
+
+// Tide clock: 0..TIDE_MAX, +1 per TIDE_STEP_MS of active play (paused in modals and talks).
+export const TIDE_MAX = 6;
+export const TIDE_STEP_MS = 180_000;

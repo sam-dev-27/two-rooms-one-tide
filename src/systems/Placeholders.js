@@ -180,6 +180,7 @@ function drawScreen(scene, key) {
     title: ['#1a2633', '#3b3a44', '#0c1217'],
     ending_truth: ['#f0b37a', '#8a6a5c', '#2a3a44'],
     ending_cover: ['#5c646b', '#3c434a', '#1b2025'],
+    ending_open: ['#0c1420', '#1a2433', '#05080c'],
   };
   const [top, mid, bottom] = palettes[key] ?? palettes.title;
   sky.addColorStop(0, top);
@@ -200,6 +201,6 @@ function drawScreen(scene, key) {
 export function makePlaceholder(scene, key, group) {
   if (group === 'room') drawRoom(scene, key);
   else if (group === 'character') drawCharacter(scene, key);
-  else if (group === 'item') drawItem(scene, key);
+  else if (group === 'item' || group === 'prop') drawItem(scene, key);
   else drawScreen(scene, key);
 }

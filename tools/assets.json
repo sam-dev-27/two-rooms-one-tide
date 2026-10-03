@@ -134,6 +134,37 @@
       "ref": "title",
       "out": "assets/ui/ending_cover.png",
       "prompt": "Same lighthouse, same camera. Now at grey dawn after the storm, flat cold light, a single rowboat leaving the island, the lamp dark, a quiet uneasy mood."
+    },
+
+    {
+      "id": "lamp_lowtide",
+      "groups": ["story"],
+      "op": "edit",
+      "ref": "lamp_before",
+      "out": "assets/rooms/lamp_lowtide.png",
+      "prompt": "Keep this exact image: same wide 16:9 framing, same room, same camera, same furniture, same arched window with its dark mullions and glass panes. Only the sea seen through the window panes changes: low tide, a jagged reef and the broken hull of a wrecked ship near the rocks, grey evening light."
+    },
+    { "id": "envelope_raw", "groups": ["story"], "op": "generate", "aspect": "1:1", "out": "tools/raw/envelope_raw.png", "prompt": "[style]. A small creased brown pay envelope, sealed, unmarked, game inventory icon, centered, plain white background." },
+    { "id": "envelope", "groups": ["story"], "op": "cutout", "ref": "envelope_raw", "out": "assets/items/envelope.png" },
+    { "id": "diary_raw", "groups": ["story"], "op": "generate", "aspect": "1:1", "out": "tools/raw/diary_raw.png", "prompt": "[style]. A small worn notebook with a cloth cover and a pencil tucked in the spine, game inventory icon, centered, plain white background." },
+    { "id": "diary", "groups": ["story"], "op": "cutout", "ref": "diary_raw", "out": "assets/items/diary.png" },
+    { "id": "rheostat_raw", "groups": ["story"], "op": "generate", "aspect": "1:1", "out": "tools/raw/rheostat_raw.png", "prompt": "[style]. An old brass rheostat dial with a black handle and engraved notches, mounted on an iron plate, centered, plain white background." },
+    { "id": "rheostat", "groups": ["story"], "op": "cutout", "ref": "rheostat_raw", "out": "assets/ui/rheostat.png" },
+    {
+      "id": "lens_closeup",
+      "groups": ["story"],
+      "op": "generate",
+      "aspect": "16:9",
+      "out": "assets/ui/lens_closeup.png",
+      "prompt": "[style]. Close-up of a lighthouse Fresnel lens ring in brass, glass prisms catching amber light, dark background, centered, no text."
+    },
+    {
+      "id": "ending_open",
+      "groups": ["story"],
+      "op": "edit",
+      "ref": "title",
+      "out": "assets/ui/ending_open.png",
+      "prompt": "Same lighthouse, same camera. Now at night, the lamp blazing at full power, a small rowboat with a lantern approaching the rocks from a ship offshore, calm black sea, tense quiet mood."
     }
   ]
 }

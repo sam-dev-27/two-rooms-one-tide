@@ -1,6 +1,7 @@
 // Game state with no Phaser dependency, so the puzzle chain can be tested in Node.
 import { CHARACTERS } from '../data/rooms.js';
-import { COMBINATIONS } from '../data/items.js';
+import { COMBINATIONS, START_ITEMS } from '../data/items.js';
+import { TIDE_MAX, TIDE_STEP_MS } from '../config.js';
 
 class Emitter {
   constructor() {
@@ -33,7 +34,7 @@ export class GameState extends Emitter {
   reset() {
     this.active = 'mara';
     this.flags = new Set();
-    this.inventory = { mara: [], tobin: [] };
+    this.inventory = { mara: [...START_ITEMS.mara], tobin: [...START_ITEMS.tobin] };
     this.arrivals = { mara: [], tobin: [] };
     this.roomStates = { lamp: 'before', cellar: 'before' };
     this.notes = [];
@@ -41,6 +42,11 @@ export class GameState extends Emitter {
     this.selected = null;
     this.modal = false;
     this.hintsUsed = 0;
+    this.hintLevels = {};
+    this.tide = 0;
+    this.tideBand = null;
+    this.tideClock = 0;
+    this.memo = {};
     this.startedAt = Date.now();
     this.lastProgressAt = Date.now();
     this.lastHintAt = 0;
@@ -133,6 +139,37 @@ export class GameState extends Emitter {
     if (this.notes.some((n) => n.id === id)) return;
     this.notes.push({ id, text });
     this.emit('notes');
+  }
+
+  /** Raises the tide; it caps at TIDE_MAX and freezes once the lamp's band is locked. Never a fail state. */
+  advanceTide(n = 1) {
+    if (this.tideBand !== null) return this.tide;
+    const next = Math.min(TIDE_MAX, this.tide + n);
+    if (next !== this.tide) {
+      this.tide = next;
+      this.emit('tide', next);
+    }
+    return this.tide;
+  }
+
+  /** Feeds active play time to the tide clock; callers skip it while modals or talks are open. */
+  tick(ms) {
+    if (this.tideBand !== null || this.tide >= TIDE_MAX) return;
+    this.tideClock += ms;
+    while (this.tideClock >= TIDE_STEP_MS) {
+      this.tideClock -= TIDE_STEP_MS;
+      this.advanceTide(1);
+    }
+  }
+
+  lockTide() {
+    if (this.tideBand === null) this.tideBand = this.tide;
+    return this.tideBand;
+  }
+
+  /** Swaps only if `who` isn't already active; returns the swap result or null. */
+  setActive(who) {
+    return this.active === who ? null : this.swap();
   }
 
   /** Returns true the first time an id is seen; used for one-shot tutorial toasts. */

@@ -1,6 +1,6 @@
 // Bridges puzzle handlers to the game. `view` supplies presentation (text, sound, animation,
 // modals); everything that changes game state goes through `state` here.
-import { HANDLERS } from '../data/puzzles.js';
+import { HANDLERS, pendingTalk } from '../data/puzzles.js';
 import { TUTORIAL, WRONG_ITEM } from '../data/text.js';
 
 export function createApi(state, view) {
@@ -9,6 +9,9 @@ export function createApi(state, view) {
 
     get actor() {
       return state.active;
+    },
+    get tideLevel() {
+      return state.tide;
     },
     has: (flag) => state.has(flag),
     set: (flag) => state.set(flag),
@@ -45,9 +48,33 @@ export function createApi(state, view) {
       view.roomChanged(room, value);
     },
 
+    /** Per-puzzle scratch memory (wheel settings, lens rotation) that survives closing a modal. */
+    memo(key, init) {
+      if (!(key in state.memo)) state.memo[key] = init;
+      return state.memo[key];
+    },
+    remember: (key, value) => (state.memo[key] = value),
+
+    raiseTide(n = 1) {
+      const before = state.tide;
+      const after = state.advanceTide(n);
+      return after - before;
+    },
+    lockTide: () => state.lockTide(),
+
+    swapTo(who) {
+      if (state.active !== who) view.swapTo(who);
+    },
+
     keypad: (opts) => view.keypad(opts),
     choice: (opts) => view.choice(opts),
+    lens: (opts) => view.lens(opts),
+    valves: (opts) => view.valves(opts),
+    morse: (opts) => view.morse(opts),
+    talk: (lines, onDone) => view.talk(lines, onDone),
+    ending: (id, onDone) => view.ending(id, onDone),
     end: (id) => view.end(id),
+    refresh: () => view.refresh(),
 
     wrongItem() {
       view.sfx('error');
@@ -56,6 +83,8 @@ export function createApi(state, view) {
   };
   return api;
 }
+
+export { pendingTalk };
 
 export function interact(api, hotspot, item = null) {
   api.hotspot = hotspot;

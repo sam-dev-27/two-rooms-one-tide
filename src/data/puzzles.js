@@ -1,17 +1,140 @@
 // Puzzle logic. One handler per hotspot: (api, item) where item is the selected inventory item or null.
 // Handlers only talk to `api`, never to Phaser, so tools/test-chain.mjs can play the game headlessly.
 //
-// Chain: logbook -> chalk code -> drawer key -> send key -> locker fuse -> crate page ->
-//        join pages -> valves (flood + power) -> plank evidence -> send fuse -> lamp -> balcony ending.
+// Chain: logbook + chalk -> talk 1 -> drawer (key, letter) -> locker (fuse, envelope) -> fuse in lamp ->
+//        lantern + lens dial (wipe, anchor to WELL) -> plate shows mirrored valve colours -> diary gasket ->
+//        valve wheels (flood, power, evidence) -> lamp lit dim -> rheostat FULL -> ledger up ->
+//        Morse shutter (CRANE or SOS) -> ending card -> final scene at the plate and the hatch.
 import { ITEMS } from './items.js';
+import { TALKS, FINAL_LINES } from './text.js';
 
 const DRAWER_CODE = '1874';
 
-function lightLamp(api) {
-  api.set('lamp_lit');
-  api.sfx('unlock');
-  api.setRoomState('lamp', 'after');
-  api.say('Light! The great lamp roars to life and its beam sweeps the storm. Behind you, the balcony latch clicks free.');
+export const LENS_PANELS = ['anchor', 'gull', 'star', 'bell', 'ship', 'fish', 'key', 'crown'];
+export const LENS_TARGET = 'anchor';
+const LENS_START = 3;
+
+export const VALVE_COLORS = ['red', 'blue', 'green', 'yellow', 'white'];
+// The plate shows WHITE GREEN RED YELLOW BLUE; the well mirrors it.
+export const VALVE_ORDER = ['blue', 'yellow', 'red', 'green', 'white'];
+
+export const MORSE = { C: '-.-.', R: '.-.', A: '.-', N: '-.', E: '.', S: '...', O: '---' };
+
+/**
+ * Advances Morse entry by one symbol ('.' or '-'). A wrong symbol resets only the current letter.
+ * Returns { letter, buffer, result } where result is 'ok' | 'letter' | 'wrong' | 'done'.
+ */
+export function morseStep(word, { letter, buffer }, symbol) {
+  const target = MORSE[word[letter]];
+  const next = buffer + symbol;
+  if (!target.startsWith(next)) return { letter, buffer: '', result: 'wrong' };
+  if (next !== target) return { letter, buffer: next, result: 'ok' };
+  if (letter + 1 === word.length) return { letter: letter + 1, buffer: '', result: 'done' };
+  return { letter: letter + 1, buffer: '', result: 'letter' };
+}
+
+/** The next speaking-tube conversation that is ready and not yet played, or null. */
+export function pendingTalk(api) {
+  return TALKS.find((t) => !api.has(t.id) && t.when(api)) ?? null;
+}
+
+function openLens(api) {
+  api.lens({
+    panels: LENS_PANELS,
+    rotation: api.memo('lens_rot', LENS_START),
+    wiped: api.has('lens_wiped'),
+    rotate: (r) => api.remember('lens_rot', r),
+    wipe() {
+      if (api.has('lens_wiped')) return;
+      api.set('lens_wiped');
+      api.note('wipe', 'You wiped the soot off the lens with your scarf. Something scratched in the soot on the rim came away with it.');
+      return 'The soot comes away in long streaks. Something scratched comes away with it. Gull grit, probably.';
+    },
+    attempt(panel) {
+      if (!api.has('lens_wiped') || panel !== LENS_TARGET) return false;
+      api.set('lens_set');
+      api.sfx('unlock');
+      api.say('The lens settles. Far below, something brightens.');
+      api.refresh();
+      return true;
+    },
+  });
+}
+
+function openValves(api) {
+  api.valves({
+    colors: VALVE_COLORS,
+    settings: api.memo('valves', [0, 0, 0, 0, 0]),
+    wrongText: 'Not that. The pipes are complaining.',
+    change: (settings) => api.remember('valves', [...settings]),
+    attempt(settings) {
+      const names = settings.map((i) => VALVE_COLORS[i]);
+      if (names.some((c, i) => c !== VALVE_ORDER[i])) {
+        api.sfx('error');
+        api.raiseTide(1);
+        api.set('valve_wrong');
+        return false;
+      }
+      api.set('valves_set');
+      api.set('prints_gone');
+      api.sfx('flood');
+      api.setRoomState('cellar', 'after');
+      api.say('Blue, yellow, red, green, white. The pipes shudder and the sea pours in, knee-deep and freezing.');
+      api.say('Behind the wall, the tide wheel starts to turn.');
+      api.say('Something bobs to the surface: a loose floorboard.');
+      return true;
+    },
+  });
+}
+
+function openMorse(api) {
+  api.morse({
+    words: [
+      { word: 'CRANE', enabled: api.holds('ledger'), lockedLabel: 'needs the ledger' },
+      { word: 'SOS', enabled: true },
+    ],
+    code: MORSE,
+    step: morseStep,
+    onDone(word) {
+      const id = word === 'CRANE' ? 'truth' : 'cover';
+      api.set(id === 'truth' ? 'signalled_truth' : 'signalled_sos');
+      api.ending(id, () => beginFinal(api));
+    },
+  });
+}
+
+function beginFinal(api) {
+  api.set('final_phase');
+  api.swapTo('tobin');
+  api.refresh();
+  api.say('The lamp runs at full power for the first time. Light pours down the weight-well, brighter than you have ever seen it.');
+}
+
+function concealChoice(api, { item, title, text, keep, tell, hiddenFlag, toldFlag, hiddenText, toldText }) {
+  api.choice({
+    title,
+    text,
+    closable: false,
+    options: [
+      {
+        label: keep,
+        enabled: true,
+        onSelect: () => {
+          api.set(hiddenFlag);
+          api.consume(item);
+          api.say(hiddenText);
+        },
+      },
+      {
+        label: tell,
+        enabled: true,
+        onSelect: () => {
+          api.set(toldFlag);
+          api.say(toldText);
+        },
+      },
+    ],
+  });
 }
 
 export const HANDLERS = {
@@ -19,144 +142,250 @@ export const HANDLERS = {
   logbook(api, item) {
     if (item) return api.wrongItem();
     if (api.has('read_logbook')) {
-      return api.say('"Crane\'s men were on the rocks again tonight." The last entry still makes your skin crawl.');
+      return api.say('"−·−·\'s men on the rocks again." "Tell −− everything Thursday." "The drawer code is chalked below." "The well flips everything."');
     }
     api.set('read_logbook');
-    api.note('logbook', 'Elias\'s log: "Crane\'s men were on the rocks again. Drawer code is the year this light was first lit. I chalked it downstairs where Crane won\'t look."');
-    api.say('Elias\'s logbook. Last entry: "Crane\'s men were on the rocks again tonight. Drawer code is the year this light was first lit. I chalked it downstairs."');
-    api.say('Pressed between the pages: the top half of a torn page. A valve order, cut off halfway.');
-    api.give('page_a');
+    api.note(
+      'logbook',
+      'Elias\'s log, names in flash-code: "−·−·\'s men on the rocks again" (C: Crane). "Tell −− everything Thursday." "The drawer code is chalked below." "The well flips everything."',
+    );
+    api.say('Elias\'s logbook. He wrote names in flash-code, like a signaller.');
+    api.say('"−·−·\'s men on the rocks again." Dash-dot-dash-dot. C. Crane.');
+    api.say('"Tell −− everything Thursday." "The drawer code is chalked below." And the last line: "The well flips everything."');
     api.toast('swap', 'swap');
   },
 
   drawer(api, item) {
     if (item) return api.wrongItem();
-    if (api.has('drawer_open')) return api.say('Empty now, apart from a stub of pencil.');
-    if (!api.has('knows_code')) api.say('A four-digit number lock. Elias\'s log said the code is chalked somewhere downstairs.');
+    if (api.has('drawer_open')) return api.say('Empty now, apart from a stub of pencil. On the desk, Elias\'s compass needle swings and never settles.');
+    if (!api.has('knows_code')) api.say('A four-digit number lock. The log said the code is chalked somewhere below.');
     api.keypad({
       title: 'Desk drawer',
       code: DRAWER_CODE,
       onSuccess: () => {
         api.set('drawer_open');
         api.sfx('unlock');
-        api.say('The lock clicks open. Inside: a heavy brass key stamped CELLAR LOCKER.');
+        api.say('The lock clicks open. Inside: a heavy brass key stamped CELLAR LOCKER. Under it, a letter in your own handwriting.');
         api.give('key');
+        api.give('letter');
+        concealChoice(api, {
+          item: 'letter',
+          title: 'Your letter',
+          text: '"Thursday. If it\'s true, God help you. — M."\n\nYou wrote it a week ago. Tobin will ask what was in the drawer.',
+          keep: 'Keep it to yourself',
+          tell: 'Tell Tobin',
+          hiddenFlag: 'letter_hidden',
+          toldFlag: 'letter_told',
+          hiddenText: 'You fold the letter into your coat.',
+          toldText: 'You keep the letter out. Tobin should hear it from you.',
+        });
       },
     });
   },
 
   lamp(api, item) {
-    if (api.has('lamp_lit')) return api.say('The great lamp blazes. Somewhere out there, a ship must see it.');
+    if (api.has('final_phase')) {
+      if (item) return api.wrongItem();
+      api.set('final_lens');
+      api.say('A long clean streak across the rim, the width of a scarf.');
+      api.say('Soot ground into the red wool.');
+      return;
+    }
     if (item && item !== 'fuse') return api.wrongItem();
     if (!api.has('fuse_fitted')) {
       if (!api.holds('fuse')) return api.say('The great lamp is dead. The fuse socket is empty and the brass is cold.');
       api.consume('fuse');
       api.set('fuse_fitted');
       api.sfx('unlock');
-      if (api.has('valves_set')) return lightLamp(api);
-      return api.say('The fuse seats with a click. Nothing. No current: the tide generator below must not be turning.');
+      return api.say('The fuse seats with a click. Nothing. No current: the tide wheel below must not be turning.');
     }
-    if (api.has('valves_set')) return lightLamp(api);
-    api.say('Still no power. The generator in the cellar has to be turning before the lamp will light.');
+    if (item) return api.wrongItem();
+    if (!api.has('lens_set')) {
+      if (!api.has('lantern_set')) {
+        api.set('lantern_set');
+        api.refresh();
+        api.say('You hang your lantern inside the lens cage. Its light drops through the glass and down the weight-well.');
+      }
+      return openLens(api);
+    }
+    if (!api.has('valves_set')) return api.say('The lens is set. Still no power: the tide wheel below isn\'t turning.');
+    if (!api.has('lamp_lit')) {
+      api.set('lamp_lit');
+      api.sfx('unlock');
+      api.setRoomState('lamp', 'after');
+      return api.say('Light! But weak: orange, like a candle in a jar. A beam this dim won\'t reach the reef.');
+    }
+    if (!api.has('lamp_full')) return api.say('Lit, but dim. Someone turned this lamp low, and it isn\'t up here.');
+    if (api.has('signalled_truth') || api.has('signalled_sos')) return api.say('The great lamp blazes.');
+    openMorse(api);
   },
 
   window(api, item) {
     if (item) return api.wrongItem();
-    if (api.has('lamp_lit')) return api.say('The beam catches a coastguard cutter, already turning toward the rock.');
-    api.say('Black water climbs the rocks. Far below, Tobin is somewhere in the cellar.');
+    if (api.has('final_phase')) return api.say('A small boat with a lantern is pulling for the rock.');
+    if (api.has('lamp_full')) {
+      api.set('saw_ship');
+      return api.say('The full beam finds the Halcyon, turning off the reef. Closer in, the cutter Vigilant swings toward the light.');
+    }
+    if (api.has('lamp_lit')) return api.say('The dim beam barely reaches the rocks. Out there, a ship\'s lights: the Halcyon, running for the reef.');
+    if (api.tideLevel <= 1) {
+      api.set('saw_wreck');
+      api.say('The tide is out. The reef shows its teeth, and on it, the broken hull of the Marigold.');
+      return api.say('Danny.');
+    }
+    if (api.tideLevel <= 3) return api.say('Surf breaks white over the reef. Somewhere beyond it, the Halcyon is on her way in.');
+    api.say('The reef is gone under black water. That\'s when it kills.');
   },
 
   balcony(api, item) {
     if (item) return api.wrongItem();
-    if (!api.has('lamp_lit')) {
-      return api.say('Locked tight. The latch is wired into the lamp circuit. It will only release when the light runs.');
+    if (!api.has('lamp_full')) {
+      return api.say('Locked tight. The latch is wired into the lamp circuit. It only releases when the light runs at full.');
     }
-    const proof = api.has('evidence_found');
-    api.choice({
-      title: 'The balcony',
-      text: proof
-        ? 'Wind and spray. The cutter is close enough to read a signal. You have Elias\'s proof.'
-        : 'Wind and spray. The cutter is close enough to read a signal. But you have nothing that proves what happened here.',
-      options: [
-        { label: 'Signal the truth: ELIAS MURDERED. PROOF ABOARD.', enabled: proof, onSelect: () => api.end('truth') },
-        { label: 'Signal for rescue, and say nothing more.', enabled: true, onSelect: () => api.end('cover') },
-      ],
-    });
+    api.set('saw_wool');
+    api.note('wool', 'A tuft of red wool snagged on the balcony rail, where Elias went over.');
+    api.say('Wind and spray. On the rail he fell from, a tuft of red wool is snagged on a rivet.');
+    api.say('Your hand goes to your scarf before you can stop it.');
   },
 
   // ---- Tobin, cellar ----
   chalk(api, item) {
     if (item) return api.wrongItem();
     api.set('knows_code');
-    api.note('chalk', 'Chalk in the cellar: "LIT 1874". Underneath, smaller: "drawer".');
-    api.say('Scratched in chalk by the stairs: LIT 1874. Underneath, smaller: "drawer". Mara will want to know.');
+    api.set('knows_anchor');
+    api.note('chalk', 'Chalk in the cellar: "LIT 1874 — drawer". Beside it, a chalk anchor with an arrow: "to the well".');
+    api.say('Scratched in chalk by the stairs: LIT 1874. Underneath, smaller: "drawer".');
+    api.say('Beside it, a little chalk anchor with an arrow pointing up at the plate: "to the well".');
+  },
+
+  plate(api, item) {
+    if (item) return api.wrongItem();
+    if (api.has('final_phase')) {
+      api.set('final_plate');
+      api.note('soot', 'On the plate, in Elias\'s hand from the lens rim: "IF I FALL IT WAS" and one long bar. Then a clean streak where the soot was wiped away.');
+      api.note('flash_tm', 'Flash-code: T is one dash. M is two.');
+      api.say('The full beam lights the whole lens now, rim and all. Words fall down the well backwards in Elias\'s scratchy hand.');
+      api.say('You read them the right way round: IF I FALL IT WAS. Then one long bar.');
+      api.say('After it, a clean streak where the soot was wiped away.');
+      api.refresh();
+      return;
+    }
+    if (!api.has('lantern_set')) return api.say('A square of frosted glass set into the wall, under the old weight-well shaft. Dark.');
+    if (!api.has('lens_wiped')) {
+      api.set('saw_smear');
+      return api.say('Light on the glass plate, coming down the weight-well. Just a smudge, like looking through a thumbprint.');
+    }
+    if (!api.has('lens_set')) return api.say('Coloured light slides across the glass, but it falls off one edge. The lens isn\'t lined up.');
+    api.set('knows_order');
+    api.note('order', 'Glass plate: five coloured dots, WHITE, GREEN, RED, YELLOW, BLUE, with a backwards "1" beside the right-hand dot.');
+    api.say('Five coloured dots shine on the glass: white, green, red, yellow, blue. Beside the right-hand dot, a "1", written backwards.');
   },
 
   crate(api, item) {
     if (item) return api.wrongItem();
-    if (api.has('crate_open')) return api.say('Rope, rags and a tin of hard biscuits. Nothing else.');
+    if (api.has('crate_open')) return api.say('Rope, rags, biscuits, and that enormous glove.');
     api.set('crate_open');
-    api.say('Under the rope and rags, a page is tucked into a biscuit tin. Elias\'s handwriting: the bottom half of something.');
-    api.give('page_b');
+    api.say('Rope, rags and a tin of hard biscuits. Under them, an oversized oilskin glove stamped HARBOURMASTER. Nobody on this rock has hands that big.');
   },
 
   locker(api, item) {
-    if (api.has('locker_open')) return api.say('The locker is empty now.');
+    if (api.has('locker_open')) return api.say('The locker is empty now. Rags. Just rags.');
     if (item && item !== 'key') return api.wrongItem();
     if (!api.holds('key')) return api.say('A steel locker with a brass padlock stamped CELLAR LOCKER. The key must be somewhere in the tower.');
     api.consume('key');
     api.set('locker_open');
     api.sfx('unlock');
-    api.say('The brass key turns. Inside, wrapped in oilcloth: a spare fuse for the great lamp.');
+    api.say('The brass key turns. Inside, wrapped in oilcloth: a spare fuse for the great lamp. Tucked behind it, a brown envelope marked "T."');
     api.give('fuse');
+    api.give('envelope');
+    concealChoice(api, {
+      item: 'envelope',
+      title: 'An envelope marked "T."',
+      text: 'Banknotes. More than a month\'s wages. Elias used to hand you envelopes like this on rough nights.\n\nMara will ask what was in the locker.',
+      keep: 'Pocket it',
+      tell: 'Tell Mara',
+      hiddenFlag: 'envelope_hidden',
+      toldFlag: 'envelope_told',
+      hiddenText: 'You push the envelope deep into your pocket.',
+      toldText: 'You leave the envelope out. Better she hears it from you.',
+    });
   },
 
   valves(api, item) {
     if (api.has('valves_set')) return api.say('The wheels are locked in place. Behind the wall, the tide wheel thrums.');
-    if (item && item !== 'valve_order') return api.wrongItem();
-    if (api.holds('valve_order')) {
-      api.consume('valve_order');
-      api.set('valves_set');
-      api.sfx('flood');
-      api.setRoomState('cellar', 'after');
-      api.say('Red, green, red, blue. The pipes shudder and the sea pours in, knee-deep and freezing. Behind the wall, the tide wheel starts turning the generator.');
-      api.say('Something bobs to the surface: a loose floorboard.');
+    if (item === 'diary') {
+      api.consume('diary');
+      api.set('gasket');
+      api.note('gasket', 'Tore the "Low nights — E\'s orders" page out of the diary to make a gasket for wheel three.');
+      api.say('Paper and grease, like Elias taught you. The only page that will do is the one headed "Low nights — E\'s orders". You tear it out and pack it round the spindle.');
+      api.say('Wheel three stops spraying.');
+      api.give('diary_torn');
       return;
     }
-    if (api.holds('page_a') || api.holds('page_b')) {
-      return api.say('Half a valve order isn\'t enough. One wrong wheel could flood the whole tower. The full page is needed.');
+    if (item) return api.wrongItem();
+    if (!api.has('gasket')) {
+      api.say('Five iron valve wheels with brass tags, the paint long gone. Wheel three sprays seawater the moment you touch it. It needs a gasket.');
+      return;
     }
-    api.say('Four iron valve wheels. The paint is too faded to tell them apart. Turning them blind could flood the whole tower.');
+    openValves(api);
   },
 
   plank(api, item) {
     if (item) return api.wrongItem();
     api.set('evidence_found');
-    api.note('evidence', 'Under the cellar floor: a photograph of Crane watching the Marigold sink, and a ledger of insurance payouts.');
-    api.say('Under the floating plank, a hollow in the floor. Wrapped in oilskin: a photograph of Harbourmaster Crane watching the Marigold sink, and a ledger of insurance payouts.');
-    api.say('Elias didn\'t drown by accident.');
+    api.note('evidence', 'Under the cellar floor: a photograph of Crane watching the Marigold sink, and a ledger of insurance payouts for ships "lost to the Triangle".');
+    api.say('Under the floating plank, a hollow in the floor. Wrapped in oilskin: a photograph of Harbourmaster Crane watching a ship go down, and a ledger of insurance payouts.');
     api.give('photo');
     api.give('ledger');
   },
 
-  door(api, item) {
+  rheostat(api, item) {
     if (item) return api.wrongItem();
-    api.say('Barred from the outside. Someone made sure nobody would leave the cellar tonight.');
+    if (api.has('lamp_full')) return api.say('The handle sits at FULL. The scratched LOW mark under it is worn bright from use.');
+    api.set('lamp_full');
+    api.lockTide();
+    api.sfx('unlock');
+    api.refresh();
+    api.say('The handle sits on a scratched mark: LOW. Worn bright, as if someone turned it there often. You crank it round to FULL.');
+    api.say('Above you, the whole tower hums.');
   },
 
-  // ---- Both rooms ----
+  stairs(api, item) {
+    if (item) return api.wrongItem();
+    if (api.has('prints_gone')) return api.say('Sea water laps the third step. Whatever prints were on the stairs are gone. The door at the top is still barred.');
+    api.set('saw_prints');
+    api.say('The door at the top of the stairs is barred from outside. On the damp steps, two sets of boot prints, one smaller. One set never comes back down.');
+  },
+
+  // ---- Both rooms: dumbwaiter and speaking tube ----
   hatch(api, item) {
     const direction = api.actor === 'mara' ? 'down' : 'up';
     if (item) {
       api.send(item);
       if (item === 'key') api.set('key_sent');
       if (item === 'fuse') api.set('fuse_sent');
+      if (item === 'ledger' && api.actor === 'tobin') api.set('ledger_sent');
       api.say(`The ${ITEMS[item].name.toLowerCase()} rattles ${direction} the dumbwaiter shaft.`);
       api.toast('sent', 'sent');
       return;
     }
+    if (api.has('final_phase')) {
+      if (!api.has('final_plate')) {
+        return api.say(api.actor === 'tobin' ? 'Not yet. There\'s writing on the glass plate.' : 'Tobin has gone quiet down there.');
+      }
+      api.set('final_seen');
+      api.remember('final_actor', api.actor);
+      api.talk(FINAL_LINES[api.actor], () => api.end('final'));
+      return;
+    }
+    const talk = pendingTalk(api);
+    if (talk) {
+      api.set(talk.id);
+      api.talk(talk.lines(api));
+      return;
+    }
     if (api.inventoryEmpty()) {
-      return api.say(`The dumbwaiter hatch. A rope shaft runs ${direction} to the ${direction === 'down' ? 'cellar' : 'lamp room'}.`);
+      return api.say(`The dumbwaiter hatch, with the old speaking tube beside it. The shaft runs ${direction} to the ${direction === 'down' ? 'cellar' : 'lamp room'}.`);
     }
     api.say(`Select something in the bag first, then click the hatch to send it ${direction}.`);
   },

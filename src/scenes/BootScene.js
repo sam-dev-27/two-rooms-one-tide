@@ -1,5 +1,5 @@
 import { WIDTH, HEIGHT, FONT, COLORS } from '../config.js';
-import { ROOM_IMAGES, CHARACTER_IMAGES, ITEM_IMAGES, UI_IMAGES, AUDIO } from '../data/assets.js';
+import { ROOM_IMAGES, CHARACTER_IMAGES, ITEM_IMAGES, PROP_IMAGES, UI_IMAGES, AUDIO } from '../data/assets.js';
 import { makePlaceholder } from '../systems/Placeholders.js';
 import { trimTexture } from '../systems/TextureTools.js';
 import { sfx } from '../systems/Sfx.js';
@@ -8,10 +8,11 @@ const IMAGE_GROUPS = [
   ['room', ROOM_IMAGES],
   ['character', CHARACTER_IMAGES],
   ['item', ITEM_IMAGES],
+  ['prop', PROP_IMAGES],
   ['screen', UI_IMAGES],
 ];
 
-const TRIM = { character: { maxSourceSize: 1024 }, item: { maxSourceSize: 384 } };
+const TRIM = { character: { maxSourceSize: 1024 }, item: { maxSourceSize: 384 }, prop: { maxSourceSize: 384 } };
 
 export default class BootScene extends Phaser.Scene {
   constructor() {
@@ -71,8 +72,27 @@ export default class BootScene extends Phaser.Scene {
       }
     }
     if (missing.size) console.info(`[assets] using placeholders for: ${[...missing].join(', ')}`);
+    this.stampEnvelope();
     this.registry.set('missing', missing);
     sfx.attach(this.game);
     this.scene.start('Title');
+  }
+
+  /** The envelope art is unmarked; the "T." is written on in code so it can't drift in generation. */
+  stampEnvelope() {
+    const tex = this.textures.get('envelope');
+    if (!tex.getContext) return;
+    const ctx = tex.getContext();
+    const { width: w, height: h } = tex.getSourceImage();
+    ctx.save();
+    ctx.translate(w * 0.5, h * 0.66);
+    ctx.rotate(-0.08);
+    ctx.font = `italic bold ${Math.round(h * 0.34)}px Georgia, serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(30, 22, 14, 0.85)';
+    ctx.fillText('T.', 0, 0);
+    ctx.restore();
+    tex.refresh();
   }
 }

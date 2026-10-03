@@ -1,54 +1,48 @@
 import { WIDTH, HEIGHT, FONT, COLORS } from '../config.js';
-import { ENDINGS } from '../data/text.js';
+import { ENDINGS, FINAL_CARD, TAGLINE } from '../data/text.js';
 import { state } from '../systems/State.js';
 
+// The last frames: a black card, then the title over the night lighthouse. The truth/cover
+// cards play earlier, inside the game (UIScene.endingCard), so the final scene can follow.
 export default class EndingScene extends Phaser.Scene {
   constructor() {
     super('Ending');
   }
 
   create({ id }) {
-    const ending = ENDINGS[id] ?? ENDINGS.cover;
+    const ending = ENDINGS[id] ?? ENDINGS.final;
     const seconds = Math.round((Date.now() - state.startedAt) / 1000);
     const time = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
-    this.add.image(0, 0, ending.image).setOrigin(0).setDisplaySize(WIDTH, HEIGHT);
-    const shade = this.add.graphics();
-    shade.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.85, 0, 0.85, 0);
-    shade.fillRect(0, 0, WIDTH * 0.75, HEIGHT);
+    const card = this.add
+      .text(WIDTH / 2, HEIGHT / 2, FINAL_CARD, { fontFamily: FONT, fontSize: '36px', fontStyle: 'italic', color: COLORS.paperCss })
+      .setOrigin(0.5)
+      .setAlpha(0);
+    this.tweens.chain({
+      targets: card,
+      tweens: [
+        { alpha: 1, duration: 1400, delay: 600 },
+        { alpha: 0, duration: 1000, delay: 2200 },
+      ],
+      onComplete: () => this.showTitle(ending, time),
+    });
+  }
 
-    const title = this.add.text(80, 110, ending.title, {
-      fontFamily: FONT,
-      fontSize: '48px',
-      color: COLORS.paperCss,
-      fontStyle: 'bold',
-      wordWrap: { width: 660 },
-    });
-    const body = this.add.text(82, title.y + title.height + 28, ending.text, {
-      fontFamily: FONT,
-      fontSize: '21px',
-      color: COLORS.paperCss,
-      wordWrap: { width: 600 },
-      lineSpacing: 6,
-    });
-    const stats = this.add.text(82, body.y + body.height + 28, `Finished in ${time}  ·  Hints used: ${state.hintsUsed}`, {
+  showTitle(ending, time) {
+    const bg = this.add.image(0, 0, ending.image).setOrigin(0).setDisplaySize(WIDTH, HEIGHT).setAlpha(0);
+    const shade = this.add.graphics().setAlpha(0);
+    shade.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.8, 0, 0.8, 0);
+    shade.fillRect(0, 0, WIDTH * 0.7, HEIGHT);
+
+    const title = this.add
+      .text(80, 110, ending.title, { fontFamily: FONT, fontSize: '64px', color: COLORS.paperCss, fontStyle: 'bold' })
+      .setShadow(0, 4, '#000', 12, true, true);
+    const tagline = this.add.text(84, title.y + title.height + 12, TAGLINE, { fontFamily: FONT, fontSize: '24px', color: COLORS.amberCss, fontStyle: 'italic' });
+    const stats = this.add.text(84, tagline.y + 70, `Finished in ${time}  ·  Hints used: ${state.hintsUsed}  ·  Tide ${state.tideBand ?? state.tide}/6`, {
       fontFamily: FONT,
       fontSize: '18px',
       color: COLORS.mutedCss,
     });
-    const parts = [title, body, stats];
-    if (ending.footer) {
-      parts.push(
-        this.add.text(82, stats.y + 40, ending.footer, {
-          fontFamily: FONT,
-          fontSize: '19px',
-          color: COLORS.amberCss,
-          fontStyle: 'italic',
-          wordWrap: { width: 600 },
-        }),
-      );
-    }
-
     const again = this.add
       .text(82, HEIGHT - 90, 'Play again', {
         fontFamily: FONT,
@@ -64,12 +58,11 @@ export default class EndingScene extends Phaser.Scene {
       this.cameras.main.fadeOut(400, 0, 0, 0);
       this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start('Title'));
     });
-    parts.push(again);
 
-    parts.forEach((obj, i) => {
+    this.tweens.add({ targets: [bg, shade], alpha: 1, duration: 1800 });
+    [title, tagline, stats, again].forEach((obj, i) => {
       obj.setAlpha(0);
-      this.tweens.add({ targets: obj, alpha: 1, duration: 900, delay: 600 + i * 450 });
+      this.tweens.add({ targets: obj, alpha: 1, duration: 900, delay: 1200 + i * 450 });
     });
-    this.cameras.main.fadeIn(1200);
   }
 }

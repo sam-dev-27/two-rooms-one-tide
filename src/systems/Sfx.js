@@ -1,6 +1,7 @@
 // Plays a real audio file when one was loaded, otherwise synthesizes a stand-in with WebAudio.
 
-const VOLUME = { ambient: 0.35, click: 0.4, error: 0.5 };
+// Gains for the real files, which are peak-normalized; quiet foley gets more, the loud sting less.
+const VOLUME = { ambient: 0.4, click: 0.4, error: 0.4, send: 0.45, swap: 0.8, flood: 0.7, win: 0.45 };
 
 const SYNTH = {
   click: [{ freq: 720, dur: 0.05, type: 'triangle', vol: 0.08 }],

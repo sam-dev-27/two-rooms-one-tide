@@ -14,6 +14,8 @@ export default class TitleScene extends Phaser.Scene {
     const shade = this.add.graphics();
     shade.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0.65, 0.65, 0, 0);
     shade.fillRect(0, 0, WIDTH, HEIGHT * 0.55);
+    shade.fillGradientStyle(0x000000, 0x000000, 0x000000, 0x000000, 0, 0, 0.75, 0.75);
+    shade.fillRect(0, HEIGHT - 230, WIDTH, 230);
 
     this.add
       .text(80, 110, TITLE, { fontFamily: FONT, fontSize: '72px', color: COLORS.paperCss, fontStyle: 'bold' })
@@ -29,11 +31,13 @@ export default class TitleScene extends Phaser.Scene {
       .setShadow(0, 2, '#000', 8, true, true);
     this.tweens.add({ targets: prompt, alpha: 0.35, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
 
-    this.add.text(84, HEIGHT - 100, 'Tab: switch character    H: hint    N: notes    M: sound', {
-      fontFamily: FONT,
-      fontSize: '18px',
-      color: COLORS.mutedCss,
-    });
+    this.add
+      .text(84, HEIGHT - 100, 'Tab: switch character    H: hint    N: notes    M: sound', {
+        fontFamily: FONT,
+        fontSize: '18px',
+        color: COLORS.paperCss,
+      })
+      .setShadow(0, 2, '#000', 6, true, true);
     this.add
       .text(84, HEIGHT - 24, 'Made for the DreamLayer Game Jam. Art generated with DreamLayer.', {
         fontFamily: FONT,

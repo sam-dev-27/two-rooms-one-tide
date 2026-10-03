@@ -1,19 +1,19 @@
 export const ITEMS = {
   key: { name: 'Brass key', desc: 'Heavy, stamped CELLAR LOCKER.', color: '#c9a04a' },
   fuse: { name: 'Lamp fuse', desc: 'Ceramic and copper, wrapped in oilcloth.', color: '#b86b3c' },
-  page_a: { name: 'Torn page (top)', desc: 'Elias\'s handwriting. A valve order, cut off halfway.', color: '#d8c79a' },
-  page_b: { name: 'Torn page (bottom)', desc: 'The rest of a page. Water-stained.', color: '#c4b283' },
-  valve_order: { name: 'Valve order', desc: 'Red, green, red, blue. For the cellar valves.', color: '#e7d7a8' },
-  photo: { name: 'Photograph', desc: 'Harbourmaster Crane, watching the Marigold sink.', color: '#7d8a93' },
-  ledger: { name: 'Ledger', desc: 'Insurance payouts for ships that "sank in storms".', color: '#6b3f2a' },
+  letter: { name: 'Your letter', desc: '"Thursday. If it\'s true, God help you. — M." In your own hand.', color: '#d8c79a' },
+  envelope: { name: 'Envelope "T."', desc: 'A brown pay envelope with a T on it. Banknotes inside.', color: '#a8865a' },
+  diary: {
+    name: 'Engine diary',
+    desc: 'Tobin\'s tower diary. The last entry, in his hand: "Thurs 11:40 gen. checked." A page near the back is headed "Low nights — E\'s orders".',
+    color: '#7a6a4e',
+  },
+  diary_torn: { name: 'Engine diary', desc: 'One page torn out for a gasket. "Thurs 11:40 gen. checked." is still there.', color: '#7a6a4e' },
+  photo: { name: 'Photograph', desc: 'Harbourmaster Crane on the dock, watching the Marigold sink.', color: '#7d8a93' },
+  ledger: { name: 'Ledger', desc: 'Payouts for every ship the papers blamed on the Triangle. "T. — low nights — £40." "M. — no signal logged, Marigold."', color: '#6b3f2a' },
 };
 
-// When one character holds every part, the parts are replaced by the result.
-export const COMBINATIONS = [
-  {
-    parts: ['page_a', 'page_b'],
-    result: 'valve_order',
-    flag: 'pages_joined',
-    text: 'The two halves fit together: a valve order in Elias\'s hand. Red, green, red, blue.',
-  },
-];
+export const START_ITEMS = { mara: [], tobin: ['diary'] };
+
+// When one character holds every part, the parts are replaced by the result. None in this story.
+export const COMBINATIONS = [];

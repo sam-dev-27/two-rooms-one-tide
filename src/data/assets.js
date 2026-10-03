@@ -4,6 +4,7 @@
 export const ROOM_IMAGES = {
   lamp_before: 'assets/rooms/lamp_before.png',
   lamp_after: 'assets/rooms/lamp_after.png',
+  lamp_lowtide: 'assets/rooms/lamp_lowtide.png',
   cellar_before: 'assets/rooms/cellar_before.png',
   cellar_after: 'assets/rooms/cellar_after.png',
 };
@@ -18,17 +19,25 @@ export const CHARACTER_IMAGES = {
 export const ITEM_IMAGES = {
   key: 'assets/items/key.png',
   fuse: 'assets/items/fuse.png',
-  page_a: 'assets/items/page_a.png',
-  page_b: 'assets/items/page_b.png',
-  valve_order: 'assets/items/valve_order.png',
+  letter: 'assets/items/page_a.png',
+  envelope: 'assets/items/envelope.png',
+  diary: 'assets/items/diary.png',
+  diary_torn: 'assets/items/diary.png',
   photo: 'assets/items/photo.png',
   ledger: 'assets/items/ledger.png',
+};
+
+// Cutout props drawn into rooms; trimmed like items.
+export const PROP_IMAGES = {
+  rheostat: 'assets/ui/rheostat.png',
 };
 
 export const UI_IMAGES = {
   title: 'assets/ui/title.png',
   ending_truth: 'assets/ui/ending_truth.png',
   ending_cover: 'assets/ui/ending_cover.png',
+  ending_open: 'assets/ui/ending_open.png',
+  lens_closeup: 'assets/ui/lens_closeup.png',
 };
 
 export const AUDIO = {
