@@ -165,6 +165,39 @@
       "ref": "title",
       "out": "assets/ui/ending_open.png",
       "prompt": "Same lighthouse, same camera. Now at night, the lamp blazing at full power, a small rowboat with a lantern approaching the rocks from a ship offshore, calm black sea, tense quiet mood."
+    },
+
+    {
+      "id": "cut_storm",
+      "groups": ["cutscene"],
+      "op": "edit",
+      "ref": "title",
+      "out": "assets/cutscene/cut_storm.png",
+      "prompt": "Same painting style, same palette, same lighthouse on its rocky reef, wide 16:9 framing. Now a violent night storm: the lighthouse lamp is dark, towering black waves, rain, a cold green-grey haze. In the foreground a small steamship lists and sinks bow-first beside the reef, its lights going out. No people visible, no text."
+    },
+    {
+      "id": "cut_fall",
+      "groups": ["cutscene"],
+      "op": "edit",
+      "ref": "title",
+      "out": "assets/cutscene/cut_fall.png",
+      "prompt": "Same painting style and palette, wide 16:9 framing. Now a close view of the base of this lighthouse at night in the rain: wet black rocks at the foot of the tower and a narrow iron stair. A brass lantern lies on its side on the rocks, its flame out, and beside it a still figure in a dark keeper's coat lies face down in deep shadow, seen from a distance. Quiet and sad, no blood, no gore, no text."
+    },
+    {
+      "id": "cut_rowboat",
+      "groups": ["cutscene"],
+      "op": "edit",
+      "ref": "title",
+      "out": "assets/cutscene/cut_rowboat.png",
+      "prompt": "Same lighthouse, same rock, same painting style, wide 16:9 framing. Now at night in light rain, the lamp dark, black sea. In the foreground a small wooden rowboat approaches the rocks, two people seen from behind: a woman in a long grey coat and red scarf holding up a glowing brass lantern, and a young man with ginger hair in a teal coat at the oars. Tense, quiet mood, no text."
+    },
+    {
+      "id": "cut_barred",
+      "groups": ["cutscene"],
+      "op": "edit",
+      "ref": "cellar_before",
+      "out": "assets/cutscene/cut_barred.png",
+      "prompt": "Same painting style, same stone walls, wide 16:9 framing. Now seen from outside on a dark stone landing at night: a heavy wooden door, shut, with a thick iron bar dropped across it in iron brackets. Warm amber lantern light glows through the crack under the door from the room beyond. Cold blue darkness, wet stone. No people, no text."
     }
   ]
 }

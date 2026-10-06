@@ -1,6 +1,7 @@
 import { WIDTH, HEIGHT } from './config.js';
 import BootScene from './scenes/BootScene.js';
 import TitleScene from './scenes/TitleScene.js';
+import CutsceneScene from './scenes/CutsceneScene.js';
 import GameScene from './scenes/GameScene.js';
 import UIScene from './scenes/UIScene.js';
 import EndingScene from './scenes/EndingScene.js';
@@ -17,7 +18,7 @@ const game = new Phaser.Game({
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   // Scene order is also draw order: UI renders above Game.
-  scene: [BootScene, TitleScene, GameScene, UIScene, EndingScene],
+  scene: [BootScene, TitleScene, CutsceneScene, GameScene, UIScene, EndingScene],
 });
 
 if (['localhost', '127.0.0.1'].includes(location.hostname)) {

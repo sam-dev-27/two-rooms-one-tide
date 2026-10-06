@@ -13,6 +13,7 @@
     "assets:characters": "node tools/generate.mjs --group characters",
     "assets:items": "node tools/generate.mjs --group items",
     "assets:ui": "node tools/generate.mjs --group ui",
+    "assets:cutscene": "node tools/generate.mjs --group cutscene",
     "assets:dry": "node tools/generate.mjs --all --dry-run",
     "build:itch": "sh tools/package-itch.sh"
   },

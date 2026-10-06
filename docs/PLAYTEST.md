@@ -8,10 +8,23 @@ Ask afterwards:
 3. When did you first understand you could switch characters, and that the hatch was for talking as well as sending?
 4. Which puzzle was the most confusing: the lens dial, the mirrored valve order, or the Morse shutter?
 5. Did you notice the tide gauge? Did it make you feel rushed?
-6. Was anything boring or too easy?
-7. Would you play another game like this?
+6. Did you open the case board? Where did you put the cards, and did the last line of the ending feel like it was about you?
+7. When you picked what Mara or Tobin said through the tube, did it feel like your choice mattered? Did you lie? Why?
+8. The rheostat hold: was it clear that you had to switch to Mara while Tobin held it? Was 8 seconds too tight or too loose?
+9. Did you see the writing on the window in the lightning?
+10. Was anything boring or too easy?
+11. Would you play another game like this?
 
-Things to watch for: whether they read the logbook's flash-code names, whether they work out the mirrored order or need hint 2-3, how they use the Morse lever on a trackpad, and what tide level they reach full power at (target 3-4).
+Things to watch for:
+
+- Whether they read the logbook's flash-code names.
+- Whether they work out the mirrored order or need hint 2-3.
+- How they use the Morse lever on a trackpad.
+- What tide level they reach full power at (target 3-4).
+- Whether they find the case board without being told (the toast and the "N new" count), and whether they drag or click-to-place.
+- Whether they read the tube options or always press 1.
+- How many tries the rheostat hold takes.
+- Whether the idle mutters or repeat-click remarks surprise them, or start to annoy them.
 
 ---
 

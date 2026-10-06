@@ -1,6 +1,8 @@
 import { WIDTH, HEIGHT, FONT, COLORS, TIDE_MAX } from '../config.js';
 import { CHARACTERS, ROOMS } from '../data/rooms.js';
 import { ITEMS } from '../data/items.js';
+import { CARDS, COLUMNS } from '../data/board.js';
+import { CARD_TOAST, CHOICE_LABELS, HOLD_TEXT, TUTORIAL, trustLabel } from '../data/text.js';
 import { state } from '../systems/State.js';
 import { isStuck, useHint } from '../systems/Hints.js';
 import { sfx } from '../systems/Sfx.js';
@@ -15,6 +17,9 @@ const BUTTON_HOVER = '#2c4052';
 const BRASS = 0xb08a3e;
 const VALVE_HEX = { red: 0xc0392b, blue: 0x2f6fb5, green: 0x3f9a4a, yellow: 0xe0b52c, white: 0xeeeeee };
 const DOT_MS = 250;
+const CARD_W = 186;
+const CARD_H = 54;
+const CHOICE_HEX = { lie: '#e8a090', deflect: '#9fb3c1', clean: '#9be59b' };
 
 const fit = (img, size) => img.setScale(size / Math.max(img.width, img.height));
 const prettyMorse = (code) => code.replace(/\./g, '·').replace(/-/g, '−');
@@ -30,17 +35,22 @@ export default class UIScene extends Phaser.Scene {
     this.incoming = new Set();
     this.modal = null;
     this.pulse = null;
+    this.toastQueue = [];
+    this.toastBusy = false;
+    this.cardTitles = [];
 
     this.input.mouse?.disableContextMenu();
     this.createTopBar();
     this.createInventory();
     this.createMessageBox();
     this.createToast();
+    this.createHoldIndicator();
     this.cursorIcon = this.add.image(0, 0, 'key').setVisible(false).setAlpha(0.9).setDepth(90);
 
     const kb = this.input.keyboard;
     kb.on('keydown-H', () => !this.modal && this.showHint());
-    kb.on('keydown-N', () => this.toggleNotes());
+    kb.on('keydown-N', () => this.toggleCase('notes'));
+    kb.on('keydown-C', () => this.toggleCase('board'));
     kb.on('keydown-M', () => this.toggleMute());
     kb.on('keydown-ESC', () => (this.modal?.closable ? this.closeModal() : state.select(null)));
     this.input.on('pointerdown', (p) => p.rightButtonDown() && state.select(null));
@@ -49,6 +59,8 @@ export default class UIScene extends Phaser.Scene {
     state.on('select', this.refresh, this);
     state.on('swap', this.refresh, this);
     state.on('tide', this.drawTide, this);
+    state.on('card', this.onCard, this);
+    state.on('board', this.updateCaseButton, this);
     this.events.once('shutdown', () => state.offContext(this));
     this.refresh();
   }
@@ -58,6 +70,8 @@ export default class UIScene extends Phaser.Scene {
     const carrying = !!state.selected && !this.modal;
     this.cursorIcon.setVisible(carrying);
     if (carrying) this.cursorIcon.setPosition(p.x + 26, p.y + 26);
+
+    this.drawHold();
 
     const stuck = isStuck(state);
     if (stuck && !this.pulse) {
@@ -93,14 +107,14 @@ export default class UIScene extends Phaser.Scene {
     this.tideLabel = this.add.text(0, 28, '', { fontFamily: FONT, fontSize: '16px', color: COLORS.mutedCss }).setOrigin(0, 0.5);
     this.swapBtn = this.makeButton(0, 28, '', () => state.emit('request-swap'));
     this.hintBtn = this.makeButton(0, 28, 'Hint (H)', () => this.showHint());
-    this.notesBtn = this.makeButton(0, 28, 'Notes (N)', () => this.toggleNotes());
+    this.caseBtn = this.makeButton(0, 28, 'Case (C)', () => this.toggleCase('board'));
     this.muteBtn = this.makeButton(0, 28, sfx.muted ? 'Sound off' : 'Sound on', () => this.toggleMute());
     this.layoutTopButtons();
   }
 
   layoutTopButtons() {
     let x = WIDTH - 16;
-    for (const btn of [this.muteBtn, this.notesBtn, this.hintBtn, this.swapBtn]) {
+    for (const btn of [this.muteBtn, this.caseBtn, this.hintBtn, this.swapBtn]) {
       btn.setOrigin(1, 0.5).setX(x);
       x -= btn.width + 10;
     }
@@ -164,7 +178,7 @@ export default class UIScene extends Phaser.Scene {
     this.whoText.setText(`${who.name}  ·  ${ROOMS[who.room].name}`);
     const waiting = state.arrivals[state.other].length;
     this.swapBtn.setText(`Switch to ${CHARACTERS[state.other].name} (Tab)${waiting ? `  ·  ${waiting} in the hatch` : ''}`);
-    this.layoutTopButtons();
+    this.updateCaseButton();
     this.drawTide();
     this.showItemInfo(-1);
     if (state.selected) fit(this.cursorIcon.setTexture(state.selected), 44);
@@ -243,30 +257,121 @@ export default class UIScene extends Phaser.Scene {
         color: '#10161b',
         backgroundColor: COLORS.amberCss,
         padding: { x: 16, y: 8 },
-        wordWrap: { width: 760 },
+        wordWrap: { width: 620 },
         align: 'center',
       })
       .setOrigin(0.5, 0)
       .setAlpha(0)
       .setDepth(60);
+    // Case-board arrivals get their own small toast at the left, so they never fight the tips.
+    this.cardToast = this.add
+      .text(16, 64, '', {
+        fontFamily: FONT,
+        fontSize: '15px',
+        color: COLORS.paperCss,
+        backgroundColor: 'rgba(17,26,36,0.92)',
+        padding: { x: 12, y: 6 },
+        wordWrap: { width: 270 },
+      })
+      .setAlpha(0)
+      .setDepth(60);
   }
 
+  /** Tutorial tips queue up, so two tips triggered by one click are both read. */
   toast(text) {
     if (!text) return;
+    if (this.toastBusy && this.toastCurrent !== TUTORIAL.look) {
+      if (!this.toastQueue.includes(text)) this.toastQueue.push(text);
+      return;
+    }
+    this.toastBusy = true;
+    this.toastCurrent = text;
     this.tweens.killTweensOf(this.toastText);
     this.toastText.setText(text).setAlpha(0).setY(62);
     this.tweens.chain({
       targets: this.toastText,
       tweens: [
         { alpha: 1, y: 76, duration: 260, ease: 'Cubic.Out' },
-        { alpha: 0, duration: 400, delay: 6500 },
+        { alpha: 0, duration: 400, delay: this.toastQueue.length ? 4200 : 6500 },
       ],
+      onComplete: () => this.nextToast(),
     });
   }
 
+  nextToast() {
+    this.toastBusy = false;
+    this.toastCurrent = null;
+    const next = this.toastQueue.shift();
+    if (next) this.toast(next);
+  }
+
+  /** Called on a swap: the current tip and any queued swap tip are moot now. */
   hideToast() {
+    this.toastQueue = this.toastQueue.filter((t) => t !== TUTORIAL.swap && t !== TUTORIAL.look);
+    if (!this.toastBusy) return;
     this.tweens.killTweensOf(this.toastText);
-    this.tweens.add({ targets: this.toastText, alpha: 0, duration: 200 });
+    this.tweens.add({ targets: this.toastText, alpha: 0, duration: 200, onComplete: () => this.nextToast() });
+  }
+
+  onCard(id) {
+    this.updateCaseButton();
+    this.cardTitles.push(CARDS[id].title);
+    this.cardToast.setText(`${CARD_TOAST}: ${this.cardTitles.join(', ')}`);
+    this.tweens.killTweensOf(this.cardToast);
+    this.cardToast.setAlpha(1);
+    this.tweens.add({ targets: this.cardToast, scale: { from: 1.06, to: 1 }, duration: 220, ease: 'Back.Out' });
+    this.cardToastTimer?.remove();
+    this.cardToastTimer = this.time.delayedCall(2800, () => {
+      this.cardTitles = [];
+      this.tweens.add({ targets: this.cardToast, alpha: 0, duration: 400 });
+    });
+  }
+
+  updateCaseButton() {
+    const fresh = state.freshCards;
+    this.caseBtn.setText(fresh ? `Case (C)  ·  ${fresh} new` : 'Case (C)').setColor(fresh ? COLORS.amberCss : COLORS.paperCss);
+    this.layoutTopButtons();
+  }
+
+  // ---------- two-hands countdown ----------
+
+  createHoldIndicator() {
+    this.holdRing = this.add.graphics().setDepth(55);
+    this.holdText = this.add
+      .text(WIDTH - 16, 64, '', { fontFamily: FONT, fontSize: '16px', color: '#10161b', backgroundColor: COLORS.amberCss, padding: { x: 12, y: 6 } })
+      .setOrigin(1, 0)
+      .setVisible(false)
+      .setDepth(55);
+    this.holdSecond = null;
+  }
+
+  /** A ring beside the swap button and a label that count down while someone is holding on. */
+  drawHold() {
+    const g = this.holdRing.clear();
+    const hold = state.holding;
+    if (!hold) {
+      if (this.holdText.visible) this.holdText.setVisible(false);
+      this.holdSecond = null;
+      return;
+    }
+    const frac = Phaser.Math.Clamp(hold.left / hold.ms, 0, 1);
+    const secs = Math.ceil(Math.max(0, hold.left) / 1000);
+    const color = frac > 0.35 ? COLORS.amber : 0xe0605a;
+    const b = this.swapBtn.getBounds();
+    const cx = b.x - 22;
+    const cy = b.centerY;
+    g.fillStyle(0x070b10, 0.85).fillCircle(cx, cy, 16);
+    g.lineStyle(4, 0x3b5266, 1).strokeCircle(cx, cy, 13);
+    g.lineStyle(4, color, 1).beginPath().arc(cx, cy, 13, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2, false).strokePath();
+    g.lineStyle(2, color, 0.9).strokeRect(b.x - 2, b.y - 2, b.width + 4, b.height + 4);
+    this.holdText.setVisible(true).setText(`${HOLD_TEXT.label}  ·  ${secs}`).setBackgroundColor(frac > 0.35 ? COLORS.amberCss : '#e0605a');
+    const tb = this.holdText.getBounds();
+    g.fillStyle(0x070b10, 0.8).fillRect(tb.x, tb.bottom + 4, tb.width, 6);
+    g.fillStyle(color, 1).fillRect(tb.x, tb.bottom + 4, tb.width * frac, 6);
+    if (secs !== this.holdSecond) {
+      if (this.holdSecond !== null && !state.modal) sfx.play('tick');
+      this.holdSecond = secs;
+    }
   }
 
   showHint() {
@@ -351,18 +456,6 @@ export default class UIScene extends Phaser.Scene {
     return this.add.text(WIDTH / 2, y, text, { fontFamily: FONT, fontSize: '32px', color: COLORS.amberCss }).setOrigin(0.5, 0);
   }
 
-  story({ title, text, button }, onDone) {
-    const body = this.bodyText(text, 680);
-    const c = this.openModal(780, body.height + 210, { closable: false });
-    const { y, h } = c.box;
-    body.setY(y + 92);
-    const btn = this.makeButton(WIDTH / 2, y + h - 52, button, () => {
-      this.closeModal();
-      onDone?.();
-    }, '22px').setOrigin(0.5);
-    c.add([this.titleText(title, y + 32), body, btn]);
-  }
-
   choice({ title, text, options, closable = true }) {
     const body = this.bodyText(text, 640);
     const c = this.openModal(760, body.height + 130 + options.length * 62, { closable });
@@ -384,19 +477,204 @@ export default class UIScene extends Phaser.Scene {
     });
   }
 
+  // ---------- case file: board and notes ----------
+
+  /** One modal with two tabs: the case board (C) and the notebook (N). */
+  toggleCase(tab = 'board') {
+    if (this.modal?.kind === 'case') {
+      if (this.modal.tab === tab) return this.closeModal();
+    } else if (this.modal) {
+      return;
+    }
+    const c = this.openModal(1200, 660, { kind: 'case' });
+    c.tab = tab;
+    const { x, y, w, h } = c.box;
+    c.add(this.add.text(x + 30, y + 18, 'Case', { fontFamily: FONT, fontSize: '30px', color: COLORS.amberCss }));
+    const tabBtn = (tx, label, id) => {
+      const btn = this.makeButton(tx, y + 24, label, () => this.toggleCase(id), '17px');
+      if (id === tab) btn.setBackgroundColor('#3a4a2a').setColor(COLORS.amberCss);
+      btn.on('pointerout', () => id === tab && btn.setBackgroundColor('#3a4a2a'));
+      return btn;
+    };
+    const boardTab = tabBtn(x + 130, 'Board (C)', 'board');
+    const notesTab = tabBtn(x + 130 + boardTab.width + 10, 'Notes (N)', 'notes');
+    const close = this.makeButton(x + w - 24, y + 24, 'Close (Esc)', () => this.closeModal(), '17px').setOrigin(1, 0);
+    c.add([boardTab, notesTab, close]);
+    if (tab === 'notes') this.renderNotes(c);
+    else this.renderBoard(c);
+  }
+
   toggleNotes() {
-    if (this.modal?.kind === 'notes') return this.closeModal();
-    if (this.modal) return;
+    this.toggleCase('notes');
+  }
+
+  renderNotes(c) {
+    const { y, h } = c.box;
     const text = state.notes.length
       ? state.notes.map((n) => `-  ${n.text}`).join('\n\n')
       : 'Nothing written down yet. Clues you read are copied here automatically.';
-    const body = this.bodyText(text, 700, state.notes.length > 6 ? '16px' : '19px');
-    if (body.height > 480) body.setFontSize(14);
-    const c = this.openModal(800, body.height + 190, { kind: 'notes' });
-    const { y, h } = c.box;
-    body.setY(y + 90);
-    const close = this.makeButton(WIDTH / 2, y + h - 48, 'Close (N)', () => this.closeModal()).setOrigin(0.5);
-    c.add([this.titleText('Notebook', y + 30), body, close]);
+    const body = this.bodyText(text, 1000, state.notes.length > 6 ? '16px' : '19px').setY(y + 90);
+    if (body.height > h - 120) body.setFontSize(14);
+    c.add(body);
+  }
+
+  renderBoard(c) {
+    const { x, y, w } = c.box;
+    const tray = { x: x + 20, y: y + 96, w: w - 40, h: 196 };
+    const colTop = y + 310;
+    const colH = 290;
+    const colW = 280;
+    const cols = COLUMNS.map((col, i) => ({ ...col, x: x + 20 + i * 287, y: colTop, w: colW, h: colH }));
+    let selected = null;
+    let drag = null;
+    let reaction = null;
+
+    const trust = this.add
+      .text(x + w - 160, y + 33, `Between them: ${trustLabel(state)}`, { fontFamily: FONT, fontSize: '16px', fontStyle: 'italic', color: COLORS.mutedCss })
+      .setOrigin(1, 0.5);
+    const trayBg = this.add.rectangle(tray.x, tray.y, tray.w, tray.h, 0x0b1118, 0.7).setOrigin(0).setStrokeStyle(1, 0x3b5266).setInteractive();
+    const trayLabel = this.add.text(tray.x, tray.y - 24, 'Clues', { fontFamily: FONT, fontSize: '17px', color: COLORS.mutedCss });
+    c.add([trust, trayBg, trayLabel]);
+    const colBgs = cols.map((col) => {
+      const bg = this.add.rectangle(col.x, col.y, col.w, col.h, 0x0b1118, 0.7).setOrigin(0).setStrokeStyle(1, 0x3b5266).setInteractive({ useHandCursor: true });
+      const bar = this.add.rectangle(col.x, col.y, col.w, 34, col.color, 0.85).setOrigin(0);
+      const name = this.add.text(col.x + col.w / 2, col.y + 17, col.name.toUpperCase(), { fontFamily: FONT, fontSize: '17px', fontStyle: 'bold', color: '#f8f0dc' }).setOrigin(0.5);
+      c.add([bg, bar, name]);
+      return bg;
+    });
+    const info = this.add
+      .text(x + 24, y + 614, '', { fontFamily: FONT, fontSize: '17px', color: COLORS.mutedCss, wordWrap: { width: w - 48 }, lineSpacing: 3 })
+      .setOrigin(0, 0);
+    c.add(info);
+    const layer = this.add.container(0, 0);
+    c.add(layer);
+
+    const idle = 'Drag a clue onto a suspect, or click a clue and then a column (keys 1-4; 0 puts it back). Hover a clue to read it.';
+    const showInfo = (id) => {
+      if (id) info.setColor(COLORS.paperCss).setText(`${CARDS[id].title}: ${CARDS[id].detail}`);
+      else if (reaction) info.setColor(CHARACTERS[reaction.who].css).setText(`${CHARACTERS[reaction.who].name.toUpperCase()}: "${reaction.text}"`);
+      else info.setColor(COLORS.mutedCss).setText(Object.keys(state.board).length > 1 ? idle : `${idle}\nNew clues are added as you find them.`);
+    };
+
+    const ids = () => Object.keys(state.board).sort((a, b) => state.board[a].order - state.board[b].order);
+    const slots = () => {
+      const pos = {};
+      const loose = ids().filter((id) => !state.board[id].column);
+      const rows = Math.max(1, Math.ceil(loose.length / 6));
+      const rowStep = rows > 1 ? Math.min(CARD_H + 8, (tray.h - 16 - CARD_H) / (rows - 1)) : 0;
+      loose.forEach((id, i) => {
+        pos[id] = { x: tray.x + 8 + CARD_W / 2 + (i % 6) * (CARD_W + 7), y: tray.y + 8 + CARD_H / 2 + Math.floor(i / 6) * rowStep };
+      });
+      for (const col of cols) {
+        const list = ids().filter((id) => state.board[id].column === col.id);
+        const step = list.length > 1 ? Math.min(CARD_H + 6, (col.h - 46 - CARD_H) / (list.length - 1)) : 0;
+        list.forEach((id, i) => (pos[id] = { x: col.x + col.w / 2, y: col.y + 42 + CARD_H / 2 + i * step }));
+      }
+      return pos;
+    };
+
+    const makeCard = (id, px, py) => {
+      const def = CARDS[id];
+      const card = this.add.container(px, py);
+      const isSel = selected === id;
+      const bg = this.add.rectangle(0, 0, CARD_W, CARD_H, 0xe9dcbc, 1).setStrokeStyle(isSel ? 4 : 1, isSel ? COLORS.amber : 0x6e5426);
+      const pin = this.add.circle(0, -CARD_H / 2 + 3, 4, 0xb5413a);
+      const parts = [bg, pin];
+      const ix = -CARD_W / 2 + 26;
+      const missing = this.registry.get('missing');
+      if (def.icon && this.textures.exists(def.icon) && !missing?.has(def.icon)) {
+        parts.push(fit(this.add.image(ix, 0, def.icon), 40));
+      } else {
+        parts.push(this.add.circle(ix, 0, 19, 0x2a2114));
+        parts.push(this.add.text(ix, 0, def.glyph ?? '?', { fontFamily: FONT, fontSize: def.glyph?.length > 1 ? '15px' : '22px', fontStyle: 'bold', color: '#f0d9a0' }).setOrigin(0.5));
+      }
+      const tw = CARD_W - 56;
+      const title = this.add.text(ix + 23, -CARD_H / 2 + 5, def.title, { fontFamily: FONT, fontSize: '14px', fontStyle: 'bold', color: '#2a1f12' });
+      if (title.width > tw) title.setScale(tw / title.width, 1);
+      const line = this.add.text(ix + 23, -CARD_H / 2 + 23, def.text, { fontFamily: FONT, fontSize: '12px', fontStyle: 'italic', color: '#5a4630', wordWrap: { width: tw } });
+      if (line.height > 30) line.setFontSize(11);
+      parts.push(title, line);
+      if (state.board[id].fresh) {
+        parts.push(this.add.text(CARD_W / 2 - 4, -CARD_H / 2 - 6, 'NEW', { fontFamily: FONT, fontSize: '11px', fontStyle: 'bold', color: '#fff6dc', backgroundColor: '#b5413a', padding: { x: 5, y: 1 } }).setOrigin(1, 0));
+      }
+      card.add(parts);
+      card.cardId = id;
+      bg.setInteractive({ useHandCursor: true });
+      bg.on('pointerover', () => !drag && showInfo(id));
+      bg.on('pointerout', () => !drag && showInfo(selected));
+      bg.on('pointerdown', (p) => {
+        if (p.rightButtonDown()) return;
+        drag = { id, card, sx: p.x, sy: p.y, ox: card.x - p.x, oy: card.y - p.y, moved: false };
+      });
+      return card;
+    };
+
+    const render = () => {
+      layer.removeAll(true);
+      const pos = slots();
+      const order = ids().sort((a, b) => (a === selected) - (b === selected));
+      for (const id of order) layer.add(makeCard(id, pos[id].x, pos[id].y));
+      showInfo(selected);
+    };
+
+    const place = (id, column) => {
+      reaction = state.pinCard(id, column);
+      if (reaction) sfx.play('pickup');
+      else sfx.play('click');
+      selected = null;
+      render();
+    };
+    const columnAt = (px, py) => {
+      const col = cols.find((k) => px >= k.x && px <= k.x + k.w && py >= k.y && py <= k.y + k.h);
+      if (col) return col.id;
+      if (px >= tray.x && px <= tray.x + tray.w && py >= tray.y && py <= tray.y + tray.h) return null;
+      return undefined;
+    };
+
+    colBgs.forEach((bg, i) => bg.on('pointerdown', () => selected && !drag && place(selected, cols[i].id)));
+    trayBg.on('pointerdown', () => selected && !drag && place(selected, null));
+
+    const onMove = (p) => {
+      if (!drag) return;
+      if (!drag.moved && Math.hypot(p.x - drag.sx, p.y - drag.sy) < 6) return;
+      if (!drag.moved) {
+        drag.moved = true;
+        layer.bringToTop(drag.card);
+        drag.card.setScale(1.05);
+      }
+      drag.card.setPosition(p.x + drag.ox, p.y + drag.oy);
+    };
+    const onUp = (p) => {
+      if (!drag) return;
+      const { id, moved } = drag;
+      drag = null;
+      if (moved) {
+        const column = columnAt(p.x, p.y);
+        if (column === undefined || column === state.board[id].column) render();
+        else place(id, column);
+        return;
+      }
+      selected = selected === id ? null : id;
+      sfx.play('click');
+      render();
+    };
+    this.input.on('pointermove', onMove);
+    this.input.on('pointerup', onUp);
+    this.onKeys(c, {
+      down: (e) => {
+        if (!selected) return;
+        if (/^[1-4]$/.test(e.key)) place(selected, cols[Number(e.key) - 1].id);
+        else if (e.key === '0' || e.key === 'Backspace') place(selected, null);
+      },
+    });
+    const prev = c.onClose;
+    c.onClose = () => {
+      this.input.off('pointermove', onMove);
+      this.input.off('pointerup', onUp);
+      state.seeCards();
+      prev?.();
+    };
+    render();
   }
 
   keypad({ title, code, onSuccess }) {
@@ -520,10 +798,16 @@ export default class UIScene extends Phaser.Scene {
     return key;
   }
 
-  /** Speaking-tube conversation: lines of [who, text]; click or Space advances. */
-  talk(lines, onDone) {
+  /**
+   * Speaking-tube conversation: lines of [who, text]; click or Space advances. A choice entry
+   * ({ choice, who, options }) lets the player pick that character's line; the picked option's
+   * lines play next and `onChoose(choice, option)` records it.
+   */
+  talk(lines, onDone, onChoose) {
     this.closeModal();
     state.modal = true;
+    const queue = [...lines];
+    const speaker = (e) => (Array.isArray(e) ? e[0] : e.who);
     const c = this.add.container(0, 0).setDepth(100);
     const dim = this.add.rectangle(0, 0, WIDTH, HEIGHT, 0x000000, 0.35).setOrigin(0).setInteractive({ useHandCursor: true });
     const pw = 1060;
@@ -533,7 +817,9 @@ export default class UIScene extends Phaser.Scene {
     const panel = this.add.graphics();
     panel.fillStyle(COLORS.panel, 0.96).fillRoundedRect(px, py, pw, ph, 14);
     panel.lineStyle(2, COLORS.panelEdge, 0.7).strokeRoundedRect(px, py, pw, ph, 14);
-    const face = this.add.image(px + 90, py + ph / 2, this.portrait(lines[0][0])).setDisplaySize(132, 132);
+    // The panel swallows clicks too, so a click on it advances instead of reaching the room.
+    const hit = this.add.rectangle(px, py, pw, ph, 0x000000, 0.001).setOrigin(0).setInteractive({ useHandCursor: true });
+    const face = this.add.image(px + 90, py + ph / 2, this.portrait(speaker(queue[0]))).setDisplaySize(132, 132);
     const ring = this.add.graphics();
     const name = this.add.text(px + 180, py + 20, '', { fontFamily: FONT, fontSize: '20px', fontStyle: 'bold', color: COLORS.paperCss });
     const body = this.add.text(px + 180, py + 52, '', {
@@ -549,35 +835,93 @@ export default class UIScene extends Phaser.Scene {
     const tube = this.add
       .text(px + 20, py - 10, 'Speaking tube', { fontFamily: FONT, fontSize: '15px', fontStyle: 'italic', color: COLORS.amberCss })
       .setOrigin(0, 1);
-    c.add([dim, panel, face, ring, name, body, more, tube]);
+    const remember = this.add
+      .text(px + pw - 20, py - 10, '', { fontFamily: FONT, fontSize: '16px', fontStyle: 'italic', color: COLORS.amberCss })
+      .setOrigin(1, 1);
+    c.add([dim, panel, hit, face, ring, name, body, more, tube, remember]);
     Object.assign(c, { closable: false, kind: 'talk' });
     this.modal = c;
 
-    let i = -1;
-    const opened = this.time.now;
+    let options = null;
+    let opened = this.time.now;
+    const setFace = (who) => {
+      const ch = CHARACTERS[who];
+      face.setTexture(this.portrait(who)).setDisplaySize(132, 132);
+      ring.clear().lineStyle(4, ch.color, 1).strokeRect(px + 24, py + ph / 2 - 66, 132, 132);
+      return ch;
+    };
+    const pick = (entry, option) => {
+      if (!options) return;
+      options.forEach((o) => o.destroy());
+      options = null;
+      sfx.play('click');
+      onChoose?.(entry, option);
+      queue.unshift(...option.lines);
+      if (option.kind !== 'deflect') {
+        const listener = CHARACTERS[entry.who === 'mara' ? 'tobin' : 'mara'].name;
+        remember.setText(`${listener} will remember that.`).setAlpha(1);
+        this.tweens.add({ targets: remember, alpha: 0, delay: 2600, duration: 600 });
+      }
+      opened = this.time.now;
+      show();
+    };
+    const showChoice = (entry) => {
+      const ch = setFace(entry.who);
+      name.setText(`${ch.name.toUpperCase()}  ·  choose a line`).setColor(ch.css);
+      body.setText('');
+      more.setText('Click a line, or press 1-' + entry.options.length);
+      if (state.markSeen('tube_choice')) this.toast(TUTORIAL.choice);
+      options = entry.options.map((option, i) => {
+        const btn = this.add
+          .text(px + 180, py + 54 + i * 40, `${i + 1}.  ${CHOICE_LABELS[option.kind]}:  ${option.label}`, {
+            fontFamily: FONT,
+            fontSize: '19px',
+            color: CHOICE_HEX[option.kind],
+            backgroundColor: BUTTON_BG,
+            padding: { x: 12, y: 5 },
+          })
+          .setInteractive({ useHandCursor: true });
+        btn.on('pointerover', () => btn.setBackgroundColor(BUTTON_HOVER));
+        btn.on('pointerout', () => btn.setBackgroundColor(BUTTON_BG));
+        btn.on('pointerdown', (p) => !p.rightButtonDown() && pick(entry, option));
+        btn.option = option;
+        c.add(btn);
+        return btn;
+      });
+      options.entry = entry;
+    };
     const show = () => {
-      i++;
-      if (i >= lines.length) {
+      const entry = queue.shift();
+      if (entry === undefined) {
         this.closeModal();
         onDone?.();
         return;
       }
-      const [who, text] = lines[i];
-      const ch = CHARACTERS[who];
-      face.setTexture(this.portrait(who)).setDisplaySize(132, 132);
-      ring.clear().lineStyle(4, ch.color, 1).strokeRect(px + 24, py + ph / 2 - 66, 132, 132);
+      if (!Array.isArray(entry)) return showChoice(entry);
+      const [who, text] = entry;
+      const ch = setFace(who);
       name.setText(ch.name.toUpperCase()).setColor(ch.css);
       body.setText(text).setAlpha(0);
       this.tweens.add({ targets: body, alpha: 1, duration: 180 });
-      more.setText(i === lines.length - 1 ? 'Click or Space to close' : 'Click or Space');
+      more.setText(queue.length === 0 ? 'Click or Space to close' : 'Click or Space');
     };
     const advance = () => {
-      if (this.time.now - opened < 250) return;
+      if (options || this.time.now - opened < 250) return;
       sfx.play('click');
       show();
     };
     dim.on('pointerdown', advance);
-    this.onKeys(c, { down: (e) => (e.code === 'Space' || e.key === 'Enter') && advance() });
+    hit.on('pointerdown', advance);
+    this.onKeys(c, {
+      down: (e) => {
+        if (options) {
+          const n = Number(e.key);
+          if (n >= 1 && n <= options.length) pick(options.entry, options[n - 1].option);
+          return;
+        }
+        if (e.code === 'Space' || e.key === 'Enter') advance();
+      },
+    });
     show();
   }
 

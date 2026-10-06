@@ -1,6 +1,8 @@
 // Game state with no Phaser dependency, so the puzzle chain can be tested in Node.
 import { CHARACTERS } from '../data/rooms.js';
 import { COMBINATIONS, START_ITEMS } from '../data/items.js';
+import { CARDS, COLUMNS, boardReaction } from '../data/board.js';
+import { CROSS_ROOM } from '../data/text.js';
 import { TIDE_MAX, TIDE_STEP_MS } from '../config.js';
 
 class Emitter {
@@ -47,9 +49,15 @@ export class GameState extends Emitter {
     this.tideBand = null;
     this.tideClock = 0;
     this.memo = {};
+    this.board = {};
+    this.trust = 0;
+    this.reactions = { mara: [], tobin: [] };
+    this.holding = null;
     this.startedAt = Date.now();
     this.lastProgressAt = Date.now();
+    this.lastInputAt = Date.now();
     this.lastHintAt = 0;
+    this.addCard('fall');
     this.emit('reset');
   }
 
@@ -69,7 +77,17 @@ export class GameState extends Emitter {
     if (this.flags.has(flag)) return;
     this.flags.add(flag);
     this.lastProgressAt = Date.now();
+    const cross = CROSS_ROOM[flag];
+    if (cross && cross.to !== this.active) {
+      this.queueReaction(cross.to, cross.line);
+      if (cross.muffled) this.emit('muffled', cross.muffled);
+    }
     this.emit('flag', flag);
+  }
+
+  /** A line `who` says the next time the player switches to them. */
+  queueReaction(who, line) {
+    if (!this.reactions[who].includes(line)) this.reactions[who].push(line);
   }
 
   holds(item, who = this.active) {
@@ -119,10 +137,12 @@ export class GameState extends Emitter {
     this.active = this.other;
     const arrived = this.arrivals[this.active];
     this.arrivals[this.active] = [];
+    const reactions = this.reactions[this.active];
+    this.reactions[this.active] = [];
     const combined = this.combine(this.active);
     this.emit('swap');
     this.emit('inventory');
-    return { arrived, combined };
+    return { arrived, combined, reactions };
   }
 
   select(item) {
@@ -177,6 +197,71 @@ export class GameState extends Emitter {
     if (this.seen.has(id)) return false;
     this.seen.add(id);
     return true;
+  }
+
+  // ---- case board ----
+
+  /** Adds a clue card (unpinned, marked new). Returns true if it wasn't on the board yet. */
+  addCard(id) {
+    if (!CARDS[id] || this.board[id]) return false;
+    this.board[id] = { column: null, fresh: true, order: Object.keys(this.board).length };
+    this.emit('card', id);
+    return true;
+  }
+
+  /** Pins a card on a suspect column, or back to the tray with null. Returns a one-time reaction or null. */
+  pinCard(id, column) {
+    const card = this.board[id];
+    if (!card) return null;
+    const to = COLUMNS.some((c) => c.id === column) ? column : null;
+    card.fresh = false;
+    if (card.column === to) return null;
+    card.column = to;
+    this.emit('board');
+    const reaction = to && boardReaction(id, to, this.active);
+    return reaction && this.markSeen(`react_${reaction.key}`) ? reaction : null;
+  }
+
+  seeCards() {
+    for (const card of Object.values(this.board)) card.fresh = false;
+    this.emit('board');
+  }
+
+  get freshCards() {
+    return Object.values(this.board).filter((c) => c.fresh).length;
+  }
+
+  adjustTrust(n) {
+    if (!n) return;
+    this.trust += n;
+    this.emit('trust', this.trust);
+  }
+
+  // ---- two-hands hold: one character keeps something in place while the player acts as the other ----
+
+  startHold(id, by, ms) {
+    this.holding = { id, by, ms, left: ms };
+    this.emit('hold', this.holding);
+  }
+
+  /** Counts down an active hold; returns the hold that just ran out, or null. Callers skip it while modals are open. */
+  tickHold(ms) {
+    if (!this.holding) return null;
+    this.holding.left -= ms;
+    if (this.holding.left > 0) return null;
+    const expired = this.holding;
+    this.endHold();
+    return expired;
+  }
+
+  endHold() {
+    if (!this.holding) return;
+    this.holding = null;
+    this.emit('hold', null);
+  }
+
+  noteInput(now = Date.now()) {
+    this.lastInputAt = now;
   }
 }
 

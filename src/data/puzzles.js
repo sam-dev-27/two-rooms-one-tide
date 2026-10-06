@@ -3,12 +3,14 @@
 //
 // Chain: logbook + chalk -> talk 1 -> drawer (key, letter) -> locker (fuse, envelope) -> fuse in lamp ->
 //        lantern + lens dial (wipe, anchor to WELL) -> plate shows mirrored valve colours -> diary gasket ->
-//        valve wheels (flood, power, evidence) -> lamp lit dim -> rheostat FULL -> ledger up ->
+//        valve wheels (flood, power, evidence) -> lamp lit dim -> Tobin holds the rheostat at FULL while
+//        Mara latches the lamp (two hands, 8 s) -> ledger up ->
 //        Morse shutter (CRANE or SOS) -> ending card -> final scene at the plate and the hatch.
 import { ITEMS } from './items.js';
-import { TALKS, FINAL_LINES } from './text.js';
+import { TALKS, finalLine, HOLD_TEXT, LIGHTNING_TEXT } from './text.js';
 
 const DRAWER_CODE = '1874';
+export const HOLD_MS = 8000;
 
 export const LENS_PANELS = ['anchor', 'gull', 'star', 'bell', 'ship', 'fish', 'key', 'crown'];
 export const LENS_TARGET = 'anchor';
@@ -47,6 +49,7 @@ function openLens(api) {
     wipe() {
       if (api.has('lens_wiped')) return;
       api.set('lens_wiped');
+      api.card('soot_wipe');
       api.note('wipe', 'You wiped the soot off the lens with your scarf. Something scratched in the soot on the rim came away with it.');
       return 'The soot comes away in long streaks. Something scratched comes away with it. Gull grit, probably.';
     },
@@ -121,6 +124,7 @@ function concealChoice(api, { item, title, text, keep, tell, hiddenFlag, toldFla
         enabled: true,
         onSelect: () => {
           api.set(hiddenFlag);
+          api.adjustTrust(-1);
           api.consume(item);
           api.say(hiddenText);
         },
@@ -130,11 +134,42 @@ function concealChoice(api, { item, title, text, keep, tell, hiddenFlag, toldFla
         enabled: true,
         onSelect: () => {
           api.set(toldFlag);
+          api.adjustTrust(1);
           api.say(toldText);
         },
       },
     ],
   });
+}
+
+// Two-hands moments: `slip` runs when the hold's countdown ends. Never a fail state; the first
+// slip costs one tide step, like a wrong valve setting.
+export const HOLDS = {
+  rheostat: {
+    slip(api) {
+      api.sfx('error');
+      if (!api.has('hold_slipped')) {
+        api.set('hold_slipped');
+        api.raiseTide(1);
+      }
+      for (const line of api.actor === 'tobin' ? HOLD_TEXT.slipTobin : HOLD_TEXT.slipMara) api.say(line);
+      if (api.actor !== 'tobin') api.queueReaction('tobin', HOLD_TEXT.slipReaction);
+    },
+  },
+};
+
+/** True while the lightning can still reveal the writing on Mara's window. */
+export const lightningPending = (api) => api.has('valves_set') && !api.has('saw_boats') && !api.has('final_phase');
+
+/** A lightning strike. Mara sees the salt writing if she is the one in front of the window. */
+export function lightningStrike(api) {
+  if (!lightningPending(api)) return null;
+  if (api.actor !== 'mara') return 'missed';
+  api.set('saw_boats');
+  api.card('two_boats');
+  api.note('boats', 'Lightning lit up writing traced in the salt on the lamp-room window: TWO BOATS THURS.');
+  for (const line of LIGHTNING_TEXT.seen) api.say(line);
+  return 'seen';
 }
 
 export const HANDLERS = {
@@ -145,6 +180,8 @@ export const HANDLERS = {
       return api.say('"−·−·\'s men on the rocks again." "Tell −− everything Thursday." "The drawer code is chalked below." "The well flips everything."');
     }
     api.set('read_logbook');
+    api.card('flash_names');
+    api.card('thursday');
     api.note(
       'logbook',
       'Elias\'s log, names in flash-code: "−·−·\'s men on the rocks again" (C: Crane). "Tell −− everything Thursday." "The drawer code is chalked below." "The well flips everything."',
@@ -168,6 +205,7 @@ export const HANDLERS = {
         api.say('The lock clicks open. Inside: a heavy brass key stamped CELLAR LOCKER. Under it, a letter in your own handwriting.');
         api.give('key');
         api.give('letter');
+        api.card('letter');
         concealChoice(api, {
           item: 'letter',
           title: 'Your letter',
@@ -215,7 +253,20 @@ export const HANDLERS = {
       api.setRoomState('lamp', 'after');
       return api.say('Light! But weak: orange, like a candle in a jar. A beam this dim won\'t reach the reef.');
     }
-    if (!api.has('lamp_full')) return api.say('Lit, but dim. Someone turned this lamp low, and it isn\'t up here.');
+    if (!api.has('lamp_full')) {
+      if (api.holding?.id !== 'rheostat') {
+        return api.say(api.has('rheostat_tried')
+          ? 'Lit, but dim. The latch on the housing only bites at full power. Tobin has to hold the rheostat at FULL first.'
+          : 'Lit, but dim. Someone turned this lamp low, and it isn\'t up here.');
+      }
+      api.endHold();
+      api.set('lamp_full');
+      api.lockTide();
+      api.sfx('unlock');
+      api.refresh();
+      for (const line of HOLD_TEXT.latch) api.say(line);
+      return;
+    }
     if (api.has('signalled_truth') || api.has('signalled_sos')) return api.say('The great lamp blazes.');
     openMorse(api);
   },
@@ -223,6 +274,7 @@ export const HANDLERS = {
   window(api, item) {
     if (item) return api.wrongItem();
     if (api.has('final_phase')) return api.say('A small boat with a lantern is pulling for the rock.');
+    if (api.has('valves_set') && !api.has('saw_boats')) api.say(LIGHTNING_TEXT.hintWindow);
     if (api.has('lamp_full')) {
       api.set('saw_ship');
       return api.say('The full beam finds the Halcyon, turning off the reef. Closer in, the cutter Vigilant swings toward the light.');
@@ -230,6 +282,7 @@ export const HANDLERS = {
     if (api.has('lamp_lit')) return api.say('The dim beam barely reaches the rocks. Out there, a ship\'s lights: the Halcyon, running for the reef.');
     if (api.tideLevel <= 1) {
       api.set('saw_wreck');
+      api.card('wreck');
       api.say('The tide is out. The reef shows its teeth, and on it, the broken hull of the Marigold.');
       return api.say('Danny.');
     }
@@ -243,6 +296,7 @@ export const HANDLERS = {
       return api.say('Locked tight. The latch is wired into the lamp circuit. It only releases when the light runs at full.');
     }
     api.set('saw_wool');
+    api.card('wool');
     api.note('wool', 'A tuft of red wool snagged on the balcony rail, where Elias went over.');
     api.say('Wind and spray. On the rail he fell from, a tuft of red wool is snagged on a rivet.');
     api.say('Your hand goes to your scarf before you can stop it.');
@@ -264,6 +318,8 @@ export const HANDLERS = {
       api.set('final_plate');
       api.note('soot', 'On the plate, in Elias\'s hand from the lens rim: "IF I FALL IT WAS" and one long bar. Then a clean streak where the soot was wiped away.');
       api.note('flash_tm', 'Flash-code: T is one dash. M is two.');
+      api.card('projection');
+      api.toast('final_board', 'finalBoard');
       api.say('The full beam lights the whole lens now, rim and all. Words fall down the well backwards in Elias\'s scratchy hand.');
       api.say('You read them the right way round: IF I FALL IT WAS. Then one long bar.');
       api.say('After it, a clean streak where the soot was wiped away.');
@@ -285,6 +341,7 @@ export const HANDLERS = {
     if (item) return api.wrongItem();
     if (api.has('crate_open')) return api.say('Rope, rags, biscuits, and that enormous glove.');
     api.set('crate_open');
+    api.card('glove');
     api.say('Rope, rags and a tin of hard biscuits. Under them, an oversized oilskin glove stamped HARBOURMASTER. Nobody on this rock has hands that big.');
   },
 
@@ -298,6 +355,7 @@ export const HANDLERS = {
     api.say('The brass key turns. Inside, wrapped in oilcloth: a spare fuse for the great lamp. Tucked behind it, a brown envelope marked "T."');
     api.give('fuse');
     api.give('envelope');
+    api.card('envelope');
     concealChoice(api, {
       item: 'envelope',
       title: 'An envelope marked "T."',
@@ -316,6 +374,8 @@ export const HANDLERS = {
     if (item === 'diary') {
       api.consume('diary');
       api.set('gasket');
+      api.card('diary_1140');
+      api.card('torn_page');
       api.note('gasket', 'Tore the "Low nights — E\'s orders" page out of the diary to make a gasket for wheel three.');
       api.say('Paper and grease, like Elias taught you. The only page that will do is the one headed "Low nights — E\'s orders". You tear it out and pack it round the spindle.');
       api.say('Wheel three stops spraying.');
@@ -337,23 +397,32 @@ export const HANDLERS = {
     api.say('Under the floating plank, a hollow in the floor. Wrapped in oilskin: a photograph of Harbourmaster Crane watching a ship go down, and a ledger of insurance payouts.');
     api.give('photo');
     api.give('ledger');
+    api.card('photo');
+    api.card('ledger');
   },
 
   rheostat(api, item) {
     if (item) return api.wrongItem();
-    if (api.has('lamp_full')) return api.say('The handle sits at FULL. The scratched LOW mark under it is worn bright from use.');
-    api.set('lamp_full');
-    api.lockTide();
+    if (api.has('lamp_full')) return api.say('The handle sits at FULL, held there by Mara\'s latch. The scratched LOW mark under it is worn bright from use.');
+    if (api.holding?.id === 'rheostat') return api.say(HOLD_TEXT.busy);
     api.sfx('unlock');
+    if (!api.has('rheostat_tried')) {
+      api.set('rheostat_tried');
+      api.card('rheostat_low');
+      api.say('The handle sits on a scratched mark: LOW. Worn bright, as if someone turned it there often. You crank it round to FULL.');
+      for (const line of HOLD_TEXT.start) api.say(line);
+    } else {
+      api.say(HOLD_TEXT.retry);
+    }
+    api.startHold('rheostat', 'tobin', HOLD_MS);
     api.refresh();
-    api.say('The handle sits on a scratched mark: LOW. Worn bright, as if someone turned it there often. You crank it round to FULL.');
-    api.say('Above you, the whole tower hums.');
   },
 
   stairs(api, item) {
     if (item) return api.wrongItem();
     if (api.has('prints_gone')) return api.say('Sea water laps the third step. Whatever prints were on the stairs are gone. The door at the top is still barred.');
     api.set('saw_prints');
+    api.card('prints');
     api.say('The door at the top of the stairs is barred from outside. On the damp steps, two sets of boot prints, one smaller. One set never comes back down.');
   },
 
@@ -375,12 +444,13 @@ export const HANDLERS = {
       }
       api.set('final_seen');
       api.remember('final_actor', api.actor);
-      api.talk(FINAL_LINES[api.actor], () => api.end('final'));
+      api.talk(finalLine(api, api.actor), () => api.end('final'));
       return;
     }
     const talk = pendingTalk(api);
     if (talk) {
       api.set(talk.id);
+      talk.play?.(api);
       api.talk(talk.lines(api));
       return;
     }

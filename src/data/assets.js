@@ -40,6 +40,14 @@ export const UI_IMAGES = {
   lens_closeup: 'assets/ui/lens_closeup.png',
 };
 
+// Opening cutscene stills (the last shot reuses `title`).
+export const CUTSCENE_IMAGES = {
+  cut_storm: 'assets/cutscene/cut_storm.png',
+  cut_fall: 'assets/cutscene/cut_fall.png',
+  cut_rowboat: 'assets/cutscene/cut_rowboat.png',
+  cut_barred: 'assets/cutscene/cut_barred.png',
+};
+
 export const AUDIO = {
   ambient: 'assets/audio/ambient.mp3',
   click: 'assets/audio/click.mp3',

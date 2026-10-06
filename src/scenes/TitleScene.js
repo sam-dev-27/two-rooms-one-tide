@@ -1,6 +1,5 @@
 import { WIDTH, HEIGHT, FONT, COLORS } from '../config.js';
 import { TITLE, TAGLINE } from '../data/text.js';
-import { state } from '../systems/State.js';
 import { sfx } from '../systems/Sfx.js';
 
 export default class TitleScene extends Phaser.Scene {
@@ -32,7 +31,7 @@ export default class TitleScene extends Phaser.Scene {
     this.tweens.add({ targets: prompt, alpha: 0.35, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
 
     this.add
-      .text(84, HEIGHT - 100, 'Tab: switch character    H: hint    N: notes    M: sound', {
+      .text(84, HEIGHT - 100, 'Tab: switch character    C: case board    H: hint    N: notes    M: sound', {
         fontFamily: FONT,
         fontSize: '18px',
         color: COLORS.paperCss,
@@ -64,9 +63,6 @@ export default class TitleScene extends Phaser.Scene {
     sfx.startAmbient();
     sfx.play('click');
     this.cameras.main.fadeOut(500, 0, 0, 0);
-    this.cameras.main.once('camerafadeoutcomplete', () => {
-      state.reset();
-      this.scene.start('Game');
-    });
+    this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start('Cutscene'));
   }
 }

@@ -1,7 +1,9 @@
 import { WIDTH, HEIGHT, FONT, COLORS } from '../config.js';
 import { ROOMS, CHARACTERS } from '../data/rooms.js';
 import { ITEMS } from '../data/items.js';
-import { INTRO, TWIST_CARD, endingCard } from '../data/text.js';
+import { TWIST_CARD, endingCard, IDLE_MUTTERS, LIGHTNING_TEXT, tideBandIndex } from '../data/text.js';
+import { epilogueLine } from '../data/board.js';
+import { lightningPending, lightningStrike } from '../data/puzzles.js';
 import { state } from '../systems/State.js';
 import { createApi, interact, pendingTalk } from '../systems/Interact.js';
 import { sfx } from '../systems/Sfx.js';
@@ -12,6 +14,13 @@ const listItems = (items) => {
 };
 
 const PLATE_DOTS = [0xf4f1e6, 0x3f9a4a, 0xc0392b, 0xe0b52c, 0x2f6fb5];
+const IDLE_MS = 25_000;
+const RAIN_DROPS = 70;
+// Lightning: while the window writing is unseen it strikes every 20-30 s; from tide 4 it also rumbles now and then.
+const STRIKE_REVEAL_MS = [20_000, 30_000];
+const STRIKE_FIRST_MS = 9_000;
+const STRIKE_AMBIENT_MS = [35_000, 55_000];
+const REVEAL_MS = 3000;
 
 export default class GameScene extends Phaser.Scene {
   constructor() {
@@ -33,7 +42,11 @@ export default class GameScene extends Phaser.Scene {
     this.plate = this.add.container(0, 0);
     this.rheostat = this.add.image(0, 0, 'rheostat').setVisible(false);
     this.flash = this.add.graphics().setAlpha(0);
+    this.rain = this.add.graphics();
+    this.drops = Array.from({ length: RAIN_DROPS }, () => this.newDrop(true));
+    this.flicker = this.add.rectangle(0, 0, WIDTH, HEIGHT, 0x05070a, 0).setOrigin(0);
     this.hatchGlow = this.add.graphics();
+    this.holdGlow = this.add.graphics();
     this.character = this.add.image(0, 0, state.active).setOrigin(0.5, 1);
     this.legs = this.add.image(0, 0, state.active).setOrigin(0.5, 1).setTint(0x4a7d8f).setAlpha(0.22).setVisible(false);
     this.ripple = this.add.graphics().setVisible(false);
@@ -48,6 +61,13 @@ export default class GameScene extends Phaser.Scene {
         padding: { x: 10, y: 5 },
       })
       .setVisible(false);
+    this.lightning = this.add.rectangle(0, 0, WIDTH, HEIGHT, 0xeef4ff, 0).setOrigin(0).setDepth(20);
+    this.reveal = this.add
+      .text(0, 0, LIGHTNING_TEXT.reveal, { fontFamily: FONT, fontSize: '30px', fontStyle: 'italic bold', color: '#e8f2f6', align: 'center', lineSpacing: 10 })
+      .setOrigin(0.5)
+      .setAngle(-7)
+      .setAlpha(0)
+      .setDepth(21);
     this.layoutGfx = this.add.graphics();
     this.layoutText = this.add
       .text(12, 64, '', {
@@ -72,20 +92,134 @@ export default class GameScene extends Phaser.Scene {
     state.on('flag', this.onFlag, this);
     state.on('tide', this.onTide, this);
     state.on('flash', this.flashWindow, this);
-    this.events.once('shutdown', () => state.offContext(this));
+    state.on('hold', this.renderOverlays, this);
+    state.on('muffled', (text) => this.time.delayedCall(700, () => this.ui.say(text)), this);
+    const onInput = () => state.noteInput();
+    window.addEventListener('pointerdown', onInput);
+    window.addEventListener('keydown', onInput);
+    this.events.once('shutdown', () => {
+      state.offContext(this);
+      window.removeEventListener('pointerdown', onInput);
+      window.removeEventListener('keydown', onInput);
+    });
+    this.strikeClock = STRIKE_FIRST_MS;
+    this.lastMutter = null;
+    state.noteInput();
+    sfx.setStorm(state.tide / 6);
     this.setupLayoutTool();
 
     this.cameras.main.fadeIn(500);
-    this.time.delayedCall(400, () =>
-      this.ui.story(INTRO, () => {
-        this.playing = true;
-        this.api.toast('look', 'look');
-      }),
-    );
+    this.time.delayedCall(600, () => {
+      this.playing = true;
+      this.api.toast('look', 'look');
+    });
   }
 
   update(time, delta) {
     if (this.playing && !this.busy && !state.modal && !state.has('final_phase')) state.tick(delta);
+    if (this.playing && !state.modal) {
+      const expired = state.tickHold(delta);
+      if (expired) this.api.holdExpired(expired);
+    }
+    if (!this.playing) return;
+    this.updateAtmosphere(time, delta);
+    this.updateLightning(delta);
+    this.updateIdle();
+  }
+
+  // ---------- reactive world: idle mutters, lightning, tide atmosphere ----------
+
+  updateIdle() {
+    if (this.busy || state.modal || state.holding || this.ui.showing || state.has('final_phase')) return;
+    if (Date.now() - state.lastInputAt < IDLE_MS) return;
+    const pool = IDLE_MUTTERS[state.active][tideBandIndex(state.tide)].filter((l) => l !== this.lastMutter);
+    this.lastMutter = pool[Math.floor(Math.random() * pool.length)];
+    state.noteInput();
+    this.ui.say(`"${this.lastMutter}"`);
+  }
+
+  updateLightning(delta) {
+    const reveal = lightningPending(this.api);
+    if (state.has('final_phase') || (!reveal && state.tide < 4)) return;
+    this.strikeClock -= delta;
+    if (this.strikeClock > 0) return;
+    if (this.busy || state.modal || state.holding) {
+      this.strikeClock = 1500;
+      return;
+    }
+    const [lo, hi] = reveal ? STRIKE_REVEAL_MS : STRIKE_AMBIENT_MS;
+    this.strikeClock = lo + Math.random() * (hi - lo);
+    this.strike(reveal);
+  }
+
+  /** A lightning flash and thunder. While the window writing is unseen, it shows on Mara's glass. */
+  strike(reveal = lightningPending(this.api)) {
+    const lamp = state.room === 'lamp';
+    this.tweens.killTweensOf(this.lightning);
+    this.tweens.chain({
+      targets: this.lightning,
+      tweens: [
+        { alpha: lamp ? 0.7 : 0.35, duration: 40 },
+        { alpha: 0, duration: 140 },
+        { alpha: lamp ? 0.45 : 0.2, duration: 40, delay: 90 },
+        { alpha: 0, duration: 420 },
+      ],
+    });
+    this.time.delayedCall(450 + Math.random() * 500, () => sfx.play('thunder'));
+    if (!reveal) return;
+    if (lamp) {
+      const w = ROOMS.lamp.window;
+      this.tweens.killTweensOf(this.reveal);
+      this.reveal.setPosition(w.x + w.w / 2, w.y + w.h * 0.42).setAlpha(0.95);
+      this.tweens.add({ targets: this.reveal, alpha: 0, delay: REVEAL_MS - 900, duration: 900, ease: 'Sine.In' });
+    }
+    this.time.delayedCall(600, () => {
+      const result = lightningStrike(this.api);
+      if (result === 'missed' && state.markSeen('lightning_missed')) this.ui.say(LIGHTNING_TEXT.missedCellar);
+    });
+  }
+
+  newDrop(anywhere = false) {
+    const w = ROOMS.lamp.window;
+    return { x: w.x + Math.random() * (w.w + 60), y: anywhere ? w.y + Math.random() * w.h : w.y - 20, len: 10 + Math.random() * 14, speed: 600 + Math.random() * 500 };
+  }
+
+  /** Rain on the lamp-room glass, a guttering light and a slow sway, all growing with the tide. */
+  updateAtmosphere(time, delta) {
+    const level = state.tide / 6;
+    const lamp = state.room === 'lamp';
+    const cam = this.cameras.main;
+    const sway = (lamp ? 2.6 : 1.2) * level;
+    cam.setScroll(Math.sin(time / 1900) * sway, Math.sin(time / 1300) * sway * 0.5);
+
+    if (!this.flickerAt || time > this.flickerAt) {
+      const lit = state.has('lamp_lit');
+      const strength = (lamp ? 0.05 : 0.035) + level * (lamp && lit && !state.has('lamp_full') ? 0.2 : 0.12);
+      this.flicker.setAlpha(Math.random() < 0.25 + level * 0.35 ? Math.random() * strength : 0);
+      this.flickerAt = time + 60 + Math.random() * (260 - level * 160);
+    }
+
+    this.rain.clear();
+    if (!lamp) return;
+    const w = ROOMS.lamp.window;
+    const dt = delta / 1000;
+    const shown = Math.round(RAIN_DROPS * (0.3 + level * 0.7));
+    this.rain.lineStyle(1, 0xcfe3ee, 0.18 + level * 0.3);
+    this.rain.beginPath();
+    for (let i = 0; i < shown; i++) {
+      const d = this.drops[i];
+      d.y += d.speed * dt;
+      d.x -= d.speed * (0.15 + level * 0.25) * dt;
+      if (d.y - d.len > w.y + w.h || d.x < w.x - 10) Object.assign(d, this.newDrop());
+      const x0 = Phaser.Math.Clamp(d.x, w.x, w.x + w.w);
+      const x1 = Phaser.Math.Clamp(d.x + d.len * 0.3, w.x, w.x + w.w);
+      const y0 = Phaser.Math.Clamp(d.y, w.y, w.y + w.h);
+      const y1 = Phaser.Math.Clamp(d.y - d.len, w.y, w.y + w.h);
+      if (y0 === y1) continue;
+      this.rain.moveTo(x0, y0);
+      this.rain.lineTo(x1, y1);
+    }
+    this.rain.strokePath();
   }
 
   // ---------- presentation hooks used by puzzle handlers ----------
@@ -109,7 +243,7 @@ export default class GameScene extends Phaser.Scene {
       lens: (opts) => this.ui.lens(opts),
       valves: (opts) => this.ui.valves(opts),
       morse: (opts) => this.ui.morse(opts),
-      talk: (lines, onDone) => this.ui.talk(lines, onDone),
+      talk: (lines, onDone, onChoose) => this.ui.talk(lines, onDone, onChoose),
       ending: (id, onDone) => this.showEnding(id, onDone),
       end: (id) => this.endGame(id),
     };
@@ -149,7 +283,7 @@ export default class GameScene extends Phaser.Scene {
     }
     this.windowView.setVisible(storm);
 
-    const dim = lamp && state.has('lamp_lit') && !state.has('lamp_full');
+    const dim = lamp && state.has('lamp_lit') && !state.has('lamp_full') && !state.holding;
     this.dim.setVisible(dim);
     if (dim) this.bg.setTint(0xffb27a);
     else this.bg.clearTint();
@@ -167,6 +301,19 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.drawHatchGlow();
+    this.drawHoldGlow();
+  }
+
+  drawHoldGlow() {
+    this.tweens.killTweensOf(this.holdGlow);
+    this.holdGlow.clear().setAlpha(1);
+    const hold = state.holding;
+    if (!hold) return;
+    const target = state.room === 'cellar' ? 'rheostat' : state.room === 'lamp' ? 'lamp' : null;
+    const hs = ROOMS[state.room].hotspots.find((h) => h.id === target);
+    if (!hs) return;
+    this.holdGlow.lineStyle(4, 0xfff1c4, 1).strokeRoundedRect(hs.x, hs.y, hs.w, hs.h, 14);
+    this.tweens.add({ targets: this.holdGlow, alpha: 0.2, duration: 320, yoyo: true, repeat: -1 });
   }
 
   drawWater(show) {
@@ -268,6 +415,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   onTide() {
+    sfx.setStorm(state.tide / 6);
     if (state.room === 'lamp' && state.roomStates.lamp === 'before') this.bg.setTexture(this.roomKey()).setDisplaySize(WIDTH, HEIGHT);
     this.renderOverlays();
     if (state.room === 'cellar' && !this.wadeTween) this.riseWater(900, this.wadeDepth);
@@ -449,13 +597,13 @@ export default class GameScene extends Phaser.Scene {
     const cam = this.cameras.main;
     cam.fadeOut(220, 0, 0, 0);
     cam.once('camerafadeoutcomplete', () => {
-      const { arrived, combined } = state.swap();
+      const { arrived, combined, reactions } = state.swap();
       this.renderRoom();
       cam.fadeIn(260);
       this.busy = false;
       this.ui.clearMessages();
       this.ui.hideToast();
-      this.announceArrivals(arrived, combined);
+      this.announceArrivals(arrived, combined, reactions);
     });
   }
 
@@ -463,10 +611,11 @@ export default class GameScene extends Phaser.Scene {
   swapTo(who) {
     const result = state.setActive(who);
     this.renderRoom();
-    if (result) this.announceArrivals(result.arrived, result.combined);
+    if (result) this.announceArrivals(result.arrived, result.combined, result.reactions);
   }
 
-  announceArrivals(arrived, combined) {
+  announceArrivals(arrived, combined, reactions = []) {
+    for (const line of reactions) this.ui.say(`"${line}"`);
     if (arrived.length) {
       sfx.play('pickup');
       this.ui.say(`${CHARACTERS[state.active].name} finds ${listItems(arrived)} in the dumbwaiter.`);
@@ -537,7 +686,7 @@ export default class GameScene extends Phaser.Scene {
     this.cameras.main.fadeOut(1400, 0, 0, 0);
     this.cameras.main.once('camerafadeoutcomplete', () => {
       this.scene.stop('UI');
-      this.scene.start('Ending', { id, actor: state.memo.final_actor ?? state.active });
+      this.scene.start('Ending', { id, actor: state.memo.final_actor ?? state.active, epilogue: epilogueLine(state.board) });
     });
   }
 

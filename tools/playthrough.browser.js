@@ -2,20 +2,26 @@
 // Paste into the devtools console on http://localhost:8000 (title screen), or load with:
 //   await import('/tools/playthrough.browser.js').then((m) => m.run({ actor: 'mara', truth: false }))
 // Options:
-//   actor   'tobin' | 'mara'   who clicks the hatch at the very end (picks the final line)
-//   truth   true sends the ledger up and signals CRANE; false signals SOS without it
-//   pause   checkpoint names to stop at (e.g. ['lens', 'valves', 'morse']). At each one the run sets
-//           window.__checkpoint and waits until window.__resume = true, so a screenshot can be taken.
-// Checkpoints: lensSooty, lens, plate, valves, dim, morse, ending, projection, twist, finalLine, final.
+//   actor     'tobin' | 'mara'   who clicks the hatch at the very end (picks the final line)
+//   truth     true sends the ledger up and signals CRANE; false signals SOS without it
+//   tube      'clean' | 'deflect' | 'lie'   which line to pick at every speaking-tube choice
+//   slip      true lets Tobin's grip on the rheostat run out once before the real attempt
+//   lightning true waits in the lamp room for the lightning to show the window writing
+//   board     column id to pin the suspicious cards on at the end ('tobin', 'mara', 'crane', 'triangle'), or null
+//   pause     checkpoint names to stop at (e.g. ['lens', 'valves', 'morse']). At each one the run sets
+//             window.__checkpoint and waits until window.__resume = true, so a screenshot can be taken.
+// Checkpoints: tubeChoice, lensSooty, lens, plate, valves, lightning, dim, hold, morse, ending, projection,
+//              twist, board, finalLine, final, epilogue.
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export async function run({ actor = 'tobin', truth = true, pause = [] } = {}) {
+export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie', slip = false, lightning = false, board = 'tobin', pause = [] } = {}) {
   const game = window.__game;
   const S = window.__state;
   const canvas = document.querySelector('canvas');
   const { ROOMS } = await import('/src/data/rooms.js');
   const { VALVE_COLORS, VALVE_ORDER, MORSE } = await import('/src/data/puzzles.js');
+  const { COLUMNS, EPILOGUES } = await import('/src/data/board.js');
 
   const pt = (gx, gy, buttons = 1) => {
     const r = canvas.getBoundingClientRect();
@@ -25,9 +31,9 @@ export async function run({ actor = 'tobin', truth = true, pause = [] } = {}) {
   const click = (x, y) => {
     move(x, y);
     canvas.dispatchEvent(new MouseEvent('mousedown', pt(x, y)));
-    window.dispatchEvent(new MouseEvent('mouseup', pt(x, y, 0)));
+    canvas.dispatchEvent(new MouseEvent('mouseup', pt(x, y, 0)));
   };
-  const KEYCODES = { Tab: 9, Enter: 13, Escape: 27, ' ': 32, '.': 190, '-': 189, a: 65, d: 68 };
+  const KEYCODES = { Tab: 9, Enter: 13, Escape: 27, ' ': 32, '.': 190, '-': 189, a: 65, c: 67, d: 68 };
   const keyEvent = (type, k) => {
     const code = k === ' ' ? 'Space' : /^\d$/.test(k) ? `Digit${k}` : k === '.' ? 'Period' : k === '-' ? 'Minus' : k.length === 1 ? `Key${k.toUpperCase()}` : k;
     const keyCode = KEYCODES[k] ?? (/^\d$/.test(k) ? 48 + Number(k) : k.toUpperCase().charCodeAt(0));
@@ -83,7 +89,12 @@ export async function run({ actor = 'tobin', truth = true, pause = [] } = {}) {
     await waitFor(() => S.active !== before && !gs().busy, 'swap');
     step('swap');
     await sleep(300);
+    if (!reactionShot && /pipes rang|tower shook|clicked up there|plate just lit/.test(ui().msgText.text)) {
+      reactionShot = true;
+      await checkpoint('reaction');
+    }
   };
+  let reactionShot = false;
   const as = async (who) => {
     if (S.active !== who) await swap();
   };
@@ -112,11 +123,23 @@ export async function run({ actor = 'tobin', truth = true, pause = [] } = {}) {
     }
     await sleep(700);
   };
+  const choiceButtons = () => (modalKind() === 'talk' ? ui().modal.list.filter((o) => o.option && o.active) : []);
+  let choicesSeen = 0;
   const talk = async (id) => {
     await hotspot(id);
     await waitFor(() => modalKind() === 'talk', 'talk panel');
     await sleep(350);
     while (modalKind() === 'talk') {
+      const opts = choiceButtons();
+      if (opts.length) {
+        const i = Math.max(0, opts.findIndex((o) => o.option.kind === tubeKind));
+        choicesSeen++;
+        if (choicesSeen === 1) await checkpoint('tubeChoice');
+        step(`tube choice: ${opts[i].option.kind}`);
+        key(String(i + 1));
+        await sleep(400);
+        continue;
+      }
       key(' ');
       await sleep(260);
     }
@@ -127,13 +150,13 @@ export async function run({ actor = 'tobin', truth = true, pause = [] } = {}) {
   // ---- start ----
   if (scenes().includes('Title')) {
     click(640, 360);
-    await waitFor(() => scenes().includes('Game') && ui()?.modal, 'intro');
+    await waitFor(() => scenes().includes('Cutscene'), 'cutscene');
   }
-  for (let i = 0; i < 5 && ui().modal?.kind === 'modal'; i++) {
-    await sleep(400);
-    await button('Begin');
+  if (scenes().includes('Cutscene')) {
+    await sleep(300);
+    key('Escape');
   }
-  await waitFor(() => !S.modal, 'intro closed');
+  await waitFor(() => scenes().includes('Game') && gs().playing && !S.modal, 'game started');
 
   // Investigation
   await as('mara');
@@ -233,6 +256,16 @@ export async function run({ actor = 'tobin', truth = true, pause = [] } = {}) {
   expect(S.has('evidence_found'), 'evidence');
   await sleep(800);
   await tube();
+  if (truth) expect(S.has('ledger_volunteered') === (tubeKind === 'clean'), 'a trusting Tobin volunteers the ledger');
+
+  if (lightning) {
+    await swap();
+    await waitFor(() => gs().reveal.alpha > 0.5, 'lightning on the window', 45000);
+    await sleep(250);
+    await checkpoint('lightning');
+    await waitFor(() => S.has('saw_boats') && S.board.two_boats, 'lightning card', 5000);
+    await swap();
+  }
 
   await swap();
   await hotspot('lamp');
@@ -243,7 +276,23 @@ export async function run({ actor = 'tobin', truth = true, pause = [] } = {}) {
 
   await swap();
   await hotspot('rheostat');
+  expect(S.holding?.id === 'rheostat', 'Tobin holds the rheostat');
+  if (slip) {
+    const tide = S.tide;
+    await waitFor(() => !S.holding, 'grip runs out', 12000);
+    expect(S.tide === Math.min(6, tide + 1) && !S.has('lamp_full'), 'a slip costs one tide step and never sets full power');
+    await sleep(1200);
+    await hotspot('rheostat');
+    expect(S.holding, 'retry');
+  }
+  await swap();
+  await sleep(300);
+  await checkpoint('hold');
+  expect(S.holding, 'still holding after the swap');
+  await hotspot('lamp');
   expect(S.has('lamp_full'), 'lamp full');
+  await sleep(600);
+  await swap();
   if (truth) {
     await sleep(700);
     await useItem('ledger', 'hatch_cellar');
@@ -285,6 +334,55 @@ export async function run({ actor = 'tobin', truth = true, pause = [] } = {}) {
   await waitFor(() => ui().msgText.text.includes('IF I FALL'), 'twist line', 20000);
   await sleep(400);
   await checkpoint('twist');
+  if (board) {
+    await waitFor(() => !S.modal && !gs().busy, 'idle before board');
+    key('c');
+    await waitFor(() => modalKind() === 'case', 'case board');
+    await sleep(400);
+    const box = ui().modal.box;
+    const colCenter = (id) => {
+      const i = COLUMNS.findIndex((c) => c.id === id);
+      return [box.x + 20 + i * 287 + 140, box.y + 310 + 200];
+    };
+    const cardPos = (id) => {
+      const layer = ui().modal.list.find((o) => o.type === 'Container' && o.list.some((k) => k.cardId));
+      const card = layer.list.find((k) => k.cardId === id);
+      return [card.x, card.y];
+    };
+    const drag = async (id, column) => {
+      const [x0, y0] = cardPos(id);
+      const [x1, y1] = colCenter(column);
+      move(x0, y0);
+      canvas.dispatchEvent(new MouseEvent('mousedown', pt(x0, y0)));
+      await sleep(60);
+      for (let k = 1; k <= 8; k++) {
+        canvas.dispatchEvent(new MouseEvent('mousemove', pt(x0 + ((x1 - x0) * k) / 8, y0 + ((y1 - y0) * k) / 8)));
+        await sleep(30);
+      }
+      canvas.dispatchEvent(new MouseEvent('mouseup', pt(x1, y1, 0)));
+      await sleep(300);
+      expect(S.board[id].column === column, `dragged ${id} onto ${column}`);
+      step(`pinned ${id} on ${column} (drag)`);
+    };
+    const clickPin = async (id, column) => {
+      click(...cardPos(id));
+      await sleep(250);
+      click(...colCenter(column));
+      await sleep(300);
+      expect(S.board[id].column === column, `click-pinned ${id} onto ${column}`);
+      step(`pinned ${id} on ${column} (click)`);
+    };
+    const suspicious = ['projection', 'envelope', 'torn_page', 'letter', 'wool', 'soot_wipe', 'diary_1140'];
+    const mine = { tobin: ['projection', 'envelope', 'torn_page'], mara: ['projection', 'letter', 'wool'], crane: ['glove', 'photo', 'ledger'], triangle: ['fall', 'prints'] }[board] ?? suspicious.slice(0, 3);
+    await drag(mine[0], board);
+    await drag(mine[1], board);
+    await clickPin(mine[2], board);
+    await clickPin('glove', 'crane');
+    await sleep(300);
+    await checkpoint('board');
+    key('Escape');
+    await sleep(400);
+  }
   if (actor === 'mara') {
     await swap();
     await hotspot('lamp');
@@ -295,8 +393,13 @@ export async function run({ actor = 'tobin', truth = true, pause = [] } = {}) {
   await checkpoint('finalLine');
   key(' ');
   await waitFor(() => scenes().includes('Ending'), 'ending scene', 20000);
-  await sleep(7500);
+  const ending = game.scene.getScene('Ending');
+  const verdict = ending.epilogue;
+  expect(Object.values(EPILOGUES).includes(verdict), `epilogue line shown (${verdict})`);
+  await sleep(3400);
+  await checkpoint('epilogue');
+  await sleep(6500);
   await checkpoint('final');
-  step(`ending reached as ${actor}, hints used ${S.hintsUsed}, tide ${S.tideBand}`);
+  step(`ending reached as ${actor}, tube ${tubeKind}, trust ${S.trust}, epilogue "${verdict}", hints used ${S.hintsUsed}, tide ${S.tideBand}`);
   return log;
 }

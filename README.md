@@ -7,7 +7,11 @@ A short point-and-click mystery for the DreamLayer Game Jam, set on a lighthouse
 Three hands-on puzzles carry the tower work: a lens dial (wipe the soot, set the anchor under the well), five valve wheels set from a mirrored projection, and a Morse shutter to signal the cutter. Along the way each of them quietly destroys a little evidence for a good reason, and a last line of soot on the lens leaves you wondering which of them was on the balcony with Elias. The ending is left open.
 
 - About 15-20 minutes on a first play. Two signal endings (CRANE or SOS), shaped by what each character hid and how high the tide got, then an open final scene whose last line depends on who you are playing.
-- A tide clock rises from 0 to 6 as you play and with wrong valve settings. It changes the window, the cellar and the dialogue, but you can never lose.
+- A tide clock rises from 0 to 6 as you play and with wrong valve settings. It changes the window, the cellar and the dialogue, but you can never lose. As it rises, the lamps flicker more, the rain gets louder and the camera sways.
+- **Case board.** Every clue becomes a card that you can drag (or click, then click) under Crane, Mara, Tobin or the Triangle. Some placements get a remark from whoever you're playing, though no remark ever confirms the killer. Whoever you blame picks the last line of the ending.
+- **Speaking-tube choices.** At four moments you choose what your character admits through the tube: lie, deflect or come clean. Trust between Mara and Tobin decides who volunteers the ledger, whether the final line is warm or cold, and which alibi cards you get.
+- **Two-hands moments.** Tobin can hold the worn rheostat at FULL for 8 seconds, with a countdown on the swap button, while you switch to Mara and latch the lamp. Lightning briefly shows writing on the lamp-room window for whoever is watching.
+- **A world that answers back.** Work done in one room is heard in the other on the next swap. Clicking a used-up hotspot again gets a fresh remark, and each character mutters to themselves if you leave them alone too long.
 - Runs in the browser at 1280x720 and scales to fit any screen.
 - Art made with [DreamLayer](https://dreamlayer.io). Built with Phaser 3, plain ES modules, no build step.
 
@@ -15,13 +19,16 @@ Three hands-on puzzles carry the tower work: a lens dial (wipe the soot, set the
 
 | Input | Action |
 | --- | --- |
+| Click or Space (opening cutscene) | Finish the caption, then go to the next one. Esc or the Skip button skips it |
 | Click | Look at, take, or use things |
 | Click an item, then a hotspot | Use the item there |
 | Click the hatch | Talk through the speaking tube (glows when there's something to say) |
 | Click an item, then the hatch | Send it to the other room |
 | Tab, or the top-right button | Switch character |
 | H | Hint (press again on the same step for a stronger hint; the button pulses after 60 seconds without progress) |
-| N | Notebook (clues are copied here automatically) |
+| C, or the Case button | Case board: drag a clue card onto a suspect, or click it then a column (1-4 also place it, 0 sends it back) |
+| N | Notebook, the second tab of the case board (clues are copied here automatically) |
+| 1-3 during a talk | Pick what your character says through the tube |
 | M | Mute |
 | Right-click or Esc | Drop the selected item, close dialogs |
 | A/D or arrows, 1-5, `.` `-` Space | Keyboard controls inside the lens, valve and shutter puzzles |
@@ -42,20 +49,20 @@ You need a local server: opening `index.html` directly blocks image loading. On 
 index.html               loads Phaser + src/main.js
 src/main.js              game config and scene list
 src/config.js            resolution, fonts, colours, hint delay, tide pacing
-src/scenes/              Boot (assets + placeholders), Title, Game, UI (modals, talks, mini-puzzles), Ending
+src/scenes/              Boot (assets + placeholders), Title, Cutscene (opening), Game, UI (modals, talks, mini-puzzles), Ending
 src/systems/State.js     flags, per-character inventories, hatch arrivals, tide clock (no Phaser)
 src/systems/Interact.js  the api puzzle handlers use; keeps game logic apart from presentation
 src/systems/Hints.js     escalating hint lookup and the "stuck" timer
 src/systems/Sfx.js       plays real audio files, or synthesizes stand-ins with WebAudio
 src/systems/Placeholders.js  canvas-drawn stand-ins for any missing image
-src/data/                rooms + hotspots, items + combinations, puzzle handlers, story text
+src/data/                rooms + hotspots, items + combinations, puzzle handlers, story text, case-board cards and epilogues
 tools/                   DreamLayer batch pipeline, headless tests, packaging, submission strips
 ```
 
 Design rules:
 
 - **Data-driven.** Every hotspot, item, puzzle step, hint and line of text lives in `src/data/`. The scenes contain no puzzle knowledge.
-- **Logic is headless.** Puzzle handlers only talk to an `api` object, never to Phaser. `npm test` plays the whole chain in Node for both signal endings and both final lines, and covers the edge cases: a wrong answer in each mini-puzzle, the tide clock advancing without a fail state, the tampering and concealment flags, hint escalation and wrong items. Mini-puzzle answers are checked in `src/data/puzzles.js`, so the UI only collects input.
+- **Logic is headless.** Puzzle handlers only talk to an `api` object, never to Phaser. `npm test` plays the whole chain in Node for both signal endings, both final lines and every tube-choice branch, and covers the edge cases (the case board and its epilogues, trust, the rheostat hold timing out, lightning, repeat-click barks), plus: a wrong answer in each mini-puzzle, the tide clock advancing without a fail state, the tampering and concealment flags, hint escalation and wrong items. Mini-puzzle answers are checked in `src/data/puzzles.js`, so the UI only collects input.
 - **Always playable.** Any missing image gets a generated placeholder and any missing sound gets a synthesized one, so the game ran end to end before any art existed.
 
 ## Art pipeline (DreamLayer)
@@ -71,6 +78,7 @@ node tools/generate.mjs --only lamp_after --force    # redo one image
 ```
 
 - **Rooms** are edit-chains. One base image is generated, then edited with "same room, same camera, same furniture... now flooded".
+- **Opening cutscene.** Four stills (`assets/cutscene/`) are edits of the title and cellar images; the fifth shot reuses the title. `CutsceneScene` adds the pan/zoom, letterbox, rain, vignette and typed captions from `src/data/cutscenes.js`.
 - **Overlays over new art.** The tide water line, the dim lamp, the glass-plate projection and the soot writing are all drawn in Phaser on top of the painted rooms, so story states cost no credits.
 - **Characters** are one approved reference each. Every pose is an edit of that reference, followed by `cutout` (background removal). The sprites are layered over the rooms in Phaser, so a character is never painted into a room. This works around DreamLayer's one-reference-per-call limit, and the characters never pick up the wrong room's lighting.
 

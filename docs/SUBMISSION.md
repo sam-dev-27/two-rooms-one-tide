@@ -16,12 +16,16 @@ The Triangle turns out to be a man with a pen. But every useful thing you did th
 
 - Play in your browser: [itch.io link]
 - About 15-20 minutes. Two signal endings, a tide clock that changes the world but never kills you, and an open final scene whose last line depends on who you are playing.
+- A case board: pin each clue under Crane, Mara, Tobin or the Triangle. Whoever you blame chooses the ending's last line.
+- You speak for both of them. Lie, deflect or come clean through the speaking tube, and the trust between them changes what they offer and how the night ends.
+- Two-hands moments: Tobin holds the rheostat at full power against the clock while you switch to Mara to latch the lamp, and lightning shows a message on the window for a few seconds.
+- The tower answers back. One room hears what happened in the other, used-up objects get fresh remarks, and the storm grows with the tide.
 - Made by: Sameer Sistla (design, code, writing)
 - Source: [GitHub link]
 
 ### How DreamLayer was used
 
-Every image in the game came from DreamLayer, and its edit-chains are built into how the game works. Each room is **one generation plus edits** ("same room, same camera, same furniture... now flooded", "...now at low tide with the wreck showing"), so every state lines up exactly, and the game crossfades between them as the night goes on. The endings are edits of the title image, so the same tower and rock carry through to the last frame. Story states that would have needed more art (the rising water line, the dim lamp, the light projected onto the cellar wall, the soot writing) are drawn in Phaser over the paintings instead. Each character is **one approved reference**. Every pose is an edit of that reference, then a `cutout` (background removal), and the sprites are layered over the rooms in Phaser instead of being painted in, which keeps them identical in both rooms. A small script ran the whole asset list through the DreamLayer CLI and logged every prompt and result. [What you cleaned up by hand: for example, "I repainted the hatch edge in the flooded cellar and redrew the UI frames by hand."]
+Every image in the game came from DreamLayer, and its edit-chains are built into how the game works. Each room is **one generation plus edits** ("same room, same camera, same furniture... now flooded", "...now at low tide with the wreck showing"), so every state lines up exactly, and the game crossfades between them as the night goes on. The endings are edits of the title image, so the same tower and rock carry through to the last frame. So is the short opening cutscene (a sinking ship, the keeper at the foot of the tower, Mara and Tobin rowing out, a barred door), played as slow pans with typed captions. Story states that would have needed more art (the rising water line, the dim lamp, the light projected onto the cellar wall, the soot writing) are drawn in Phaser over the paintings instead. Each character is **one approved reference**. Every pose is an edit of that reference, then a `cutout` (background removal), and the sprites are layered over the rooms in Phaser instead of being painted in, which keeps them identical in both rooms. A small script ran the whole asset list through the DreamLayer CLI and logged every prompt and result. [What you cleaned up by hand: for example, "I repainted the hatch edge in the flooded cellar and redrew the UI frames by hand."]
 
 [Edit-chain strip: docs/shots/edit-chain-lamp.png]
 
@@ -29,7 +33,7 @@ Every image in the game came from DreamLayer, and its edit-chains are built into
 
 ### Numbers
 
-- 40 DreamLayer jobs (14 generations, 12 edits, 14 cutouts): 36 kept, 4 rejected. 39 of 100 credits used.
+- 45 DreamLayer jobs (14 generations, 17 edits, 14 cutouts): 40 kept, 5 rejected. 44 of 100 credits used.
 - Biggest problems: the low-tide room edit came back square and turned the window into an open arch, until a prompt insisting on "same wide 16:9 framing... same arched window with its dark mullions" fixed it. Two cutouts were recut by hand: one lost its paper along with the white background, and one kept a painted drop shadow.
 
 ### Screenshots

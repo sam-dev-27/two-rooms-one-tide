@@ -9,8 +9,9 @@ export default class EndingScene extends Phaser.Scene {
     super('Ending');
   }
 
-  create({ id }) {
+  create({ id, epilogue }) {
     const ending = ENDINGS[id] ?? ENDINGS.final;
+    this.epilogue = epilogue;
     const seconds = Math.round((Date.now() - state.startedAt) / 1000);
     const time = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
@@ -18,14 +19,28 @@ export default class EndingScene extends Phaser.Scene {
       .text(WIDTH / 2, HEIGHT / 2, FINAL_CARD, { fontFamily: FONT, fontSize: '36px', fontStyle: 'italic', color: COLORS.paperCss })
       .setOrigin(0.5)
       .setAlpha(0);
+    // The case board's verdict sits under the last card: what the player believed, not what happened.
+    const verdict = this.add
+      .text(WIDTH / 2, HEIGHT / 2 + 56, epilogue ?? '', { fontFamily: FONT, fontSize: '22px', fontStyle: 'italic', color: COLORS.amberCss })
+      .setOrigin(0.5)
+      .setAlpha(0);
     this.tweens.chain({
       targets: card,
       tweens: [
         { alpha: 1, duration: 1400, delay: 600 },
-        { alpha: 0, duration: 1000, delay: 2200 },
+        { alpha: 0, duration: 1000, delay: epilogue ? 3600 : 2200 },
       ],
       onComplete: () => this.showTitle(ending, time),
     });
+    if (epilogue) {
+      this.tweens.chain({
+        targets: verdict,
+        tweens: [
+          { alpha: 1, duration: 1000, delay: 2000 },
+          { alpha: 0, duration: 1000, delay: 1600 },
+        ],
+      });
+    }
   }
 
   showTitle(ending, time) {
@@ -43,6 +58,7 @@ export default class EndingScene extends Phaser.Scene {
       fontSize: '18px',
       color: COLORS.mutedCss,
     });
+    if (this.epilogue) stats.setText(`${stats.text}\nCase board: ${this.epilogue}`).setLineSpacing(8);
     const again = this.add
       .text(82, HEIGHT - 90, 'Play again', {
         fontFamily: FONT,

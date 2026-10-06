@@ -1,5 +1,5 @@
 import { WIDTH, HEIGHT, FONT, COLORS } from '../config.js';
-import { ROOM_IMAGES, CHARACTER_IMAGES, ITEM_IMAGES, PROP_IMAGES, UI_IMAGES, AUDIO } from '../data/assets.js';
+import { ROOM_IMAGES, CHARACTER_IMAGES, ITEM_IMAGES, PROP_IMAGES, UI_IMAGES, CUTSCENE_IMAGES, AUDIO } from '../data/assets.js';
 import { makePlaceholder } from '../systems/Placeholders.js';
 import { trimTexture } from '../systems/TextureTools.js';
 import { sfx } from '../systems/Sfx.js';
@@ -10,6 +10,7 @@ const IMAGE_GROUPS = [
   ['item', ITEM_IMAGES],
   ['prop', PROP_IMAGES],
   ['screen', UI_IMAGES],
+  ['screen', CUTSCENE_IMAGES],
 ];
 
 const TRIM = { character: { maxSourceSize: 1024 }, item: { maxSourceSize: 384 }, prop: { maxSourceSize: 384 } };

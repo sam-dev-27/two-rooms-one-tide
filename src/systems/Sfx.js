@@ -18,6 +18,11 @@ const SYNTH = {
   swap: [{ freq: 440, to: 300, dur: 0.3, type: 'sine', vol: 0.08 }],
   win: [523, 659, 784, 1047].map((freq, i) => ({ freq, dur: 0.5, type: 'triangle', vol: 0.1, delay: i * 0.14 })),
   flood: [{ noise: true, dur: 1.8, from: 200, to: 1200, vol: 0.25 }],
+  thunder: [
+    { noise: true, dur: 2.6, from: 900, to: 90, vol: 0.32 },
+    { freq: 55, to: 32, dur: 1.6, type: 'sine', vol: 0.12 },
+  ],
+  tick: [{ freq: 1180, dur: 0.04, type: 'square', vol: 0.03 }],
 };
 
 class Sfx {
@@ -26,6 +31,8 @@ class Sfx {
     this.ctx = null;
     this.master = null;
     this.ambient = null;
+    this.ambientGain = null;
+    this.storm = 0;
     this.muted = localStorage.getItem('trot-muted') === '1';
   }
 
@@ -98,6 +105,7 @@ class Sfx {
     if (this.hasFile('ambient')) {
       this.ambient = this.game.sound.add('ambient', { loop: true, volume: VOLUME.ambient });
       this.ambient.play();
+      this.setStorm(this.storm);
       return;
     }
     if (!this.ctx) return;
@@ -120,6 +128,15 @@ class Sfx {
     src.start();
     lfo.start();
     this.ambient = src;
+    this.ambientGain = gain;
+    this.setStorm(this.storm);
+  }
+
+  /** Storm intensity 0..1 (the tide): the sea loop gets louder as it rises. Mute still wins. */
+  setStorm(level) {
+    this.storm = Math.max(0, Math.min(1, level));
+    if (this.ambient?.setVolume) this.ambient.setVolume(VOLUME.ambient * (1 + this.storm * 0.9));
+    if (this.ambientGain) this.ambientGain.gain.value = 0.045 * (1 + this.storm * 1.2);
   }
 
   toggleMute() {

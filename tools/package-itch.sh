@@ -15,7 +15,7 @@ find dist -name '.gitkeep' -delete
 # Generated art is 2-5 MB per image. Ship 1280-wide JPEG backgrounds and smaller sprites;
 # Boot picks up the .jpg through the manifest.
 if command -v sips >/dev/null 2>&1; then
-  for f in dist/assets/rooms/*.png dist/assets/ui/*.png; do
+  for f in dist/assets/rooms/*.png dist/assets/ui/*.png dist/assets/cutscene/*.png; do
     [ -e "$f" ] || continue
     sips -Z 1280 -s format jpeg -s formatOptions 84 "$f" --out "${f%.png}.jpg" >/dev/null && rm "$f"
   done

@@ -181,6 +181,10 @@ function drawScreen(scene, key) {
     ending_truth: ['#f0b37a', '#8a6a5c', '#2a3a44'],
     ending_cover: ['#5c646b', '#3c434a', '#1b2025'],
     ending_open: ['#0c1420', '#1a2433', '#05080c'],
+    cut_storm: ['#121c22', '#2a3a3c', '#060a0d'],
+    cut_fall: ['#0b1118', '#18222c', '#040608'],
+    cut_rowboat: ['#0c1420', '#1a2433', '#05080c'],
+    cut_barred: ['#0a0f16', '#141c26', '#040608'],
   };
   const [top, mid, bottom] = palettes[key] ?? palettes.title;
   sky.addColorStop(0, top);
@@ -194,7 +198,7 @@ function drawScreen(scene, key) {
   ctx.beginPath();
   ctx.ellipse(880, 590, 260, 60, 0, 0, Math.PI * 2);
   ctx.fill();
-  lighthouse(ctx, 880, 570, 0.9, key !== 'ending_cover');
+  lighthouse(ctx, 880, 570, 0.9, key !== 'ending_cover' && !key.startsWith('cut_'));
   tex.refresh();
 }
 

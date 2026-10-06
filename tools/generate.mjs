@@ -2,7 +2,7 @@
 // Batch-generates game art through the DreamLayer CLI and logs every job.
 //
 //   node tools/generate.mjs --group test          # day-1 consistency test (~6 credits)
-//   node tools/generate.mjs --group rooms         # rooms | characters | items | ui
+//   node tools/generate.mjs --group rooms         # rooms | characters | items | ui | story | cutscene
 //   node tools/generate.mjs --only lamp_after     # regenerate specific ids (comma separated)
 //   node tools/generate.mjs --all --dry-run       # print commands, spend nothing
 //
@@ -34,7 +34,7 @@ const dryRun = flag('dry-run');
 const force = flag('force');
 
 if (!group && !only && !flag('all')) {
-  console.error('Pick what to generate: --group <test|rooms|characters|items|ui>, --only <ids>, or --all');
+  console.error('Pick what to generate: --group <test|rooms|characters|items|ui|story|cutscene>, --only <ids>, or --all');
   process.exit(1);
 }
 if (!dryRun && !process.env.DREAMLAYER_API_KEY) {

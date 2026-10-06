@@ -364,4 +364,32 @@ Built as designed, with all 20 steps, the seven talks, all three mini-puzzles, t
 - **Cellar.** The door hotspot became **stairs**, which show the boot prints before the flood and nothing after it. The rheostat hotspot and prop appear only after `lamp_lit`. The glass plate and everything on it (smear, off-centre light, dots, mirrored soot writing) are drawn in Phaser rather than painted.
 - **Compass.** There is no compass hotspot. It is mentioned in the empty-drawer text.
 - **Art.** Six new images (`lamp_lowtide`, `envelope`, `diary`, `rheostat`, `lens_closeup`, `ending_open`) for 10 credits. `lamp_lowtide` needed one retry. The rheostat cutout was recut by hand.
+- **Opening cutscene.** The intro text became a skippable cutscene of about 37 seconds (`CutsceneScene`, data in `src/data/cutscenes.js`). It has five painted shots with slow pans, letterbox bars, rain and typed captions, and the captions are the intro text above split into short lines. Four new stills are edits of `title` and `cellar_before` (5 credits, including one rejected retry), and the last shot pans down the title cutaway from the lamp room to the cellar. It plays from the title screen, so "Play again" shows it too. The tide clock and the play timer start only after it ends.
 - **Pacing.** The tide step is still the proposed 3 minutes. It has not been tuned against real players yet.
+
+### Engagement pass (Oct 6)
+
+Added after the base game was complete. It needed no new art (0 credits).
+
+- **Case board** (`src/data/board.js`, `UIScene.renderBoard`). The notebook is now the second tab of a "Case" modal (C opens the board, N opens the notes). Each clue is also a card with a title, a one-line text, and either an item icon or a drawn glyph. The four columns are Crane, Mara, Tobin and the Triangle. You can drag a card, or click it and then click a column (1-4 and 0 also work), and you can move it back to the tray. State keeps `board[id] = {column, fresh, order}`. A card arriving after the first swap shows the toast "Added to the case board" and a NEW tag that clears when the board closes. Pinning certain cards to certain columns gets one remark in the voice of the character you're playing (`REACTIONS`). Each remark plays once. They hint at motive or doubt and never confirm the killer. `boardVerdict` picks one epilogue line for the Ending scene, using these rules:
+  - A column wins if it has at least two cards, at least half the pinned cards, and more than any other column.
+  - If the Tobin or Mara column wins while the other lead's column is empty, the line becomes "You never doubted ...".
+  - Otherwise, three or more columns in use gives "everyone", and anything else stays open.
+
+  The final-plate step adds a toast reminding the player that the board is still open.
+- **Tube choices** (`choice` entries in `TALKS`, picked with 1-3). There are four choices: Tobin's alibi and Mara's alibi in T1, the rheostat in T6 and the ledger in T7. The options are come clean (+1 trust), deflect (0) and lie (-1). Each concealment choice also moves trust (told +1, hidden -1). The canonical lines from the draft are now the lie options, so the story facts never change and no option blocks progress. What trust changes:
+  - At warm trust (2 or more), Tobin volunteers the ledger "T." in T5.
+  - Mara's T4 reply depends on her alibi choice.
+  - The two closing lines of T7 are phrased from the trust level after the choice.
+  - Some cards come from one choice only:
+    - Tobin's "aunt" alibi comes only from the lie.
+    - "Back at 11:40", "Thursday visit", "E's orders" and "Crane's offer" come only from coming clean.
+    - Mara's "never" alibi comes only from the lie.
+- **Final lines.** Each of the two final lines now has a warm and a cold version, chosen by trust (`finalLine`). Both versions keep the soot detail.
+- **Two hands, moment A.** Bringing the lamp to full power is now a timed hold. Tobin's rheostat starts an 8-second hold (`state.holding`). A ring and an outline count down on the swap button, a top-right bar shows the time left, and the clock ticks every second. Mara's lamp click latches the lamp only while the hold is active. When time runs out, the rheostat slips back with a line for whoever is active, plus a queued remark for Tobin. You can retry at once. The first slip costs +1 tide. The hold clock pauses while a modal is open, and the holder's other clicks are refused.
+- **Two hands, moment B.** Once the valves are set, lightning strikes every 20-30 seconds. It flashes, plays thunder, and shows "TWO BOATS / THURS" in the salt on Mara's window for 3 seconds. If Mara is in the lamp room, she sees it and gets the "Two boats" card. Strikes stop once the writing is seen, and seeing it is never required. The window hint also points at it.
+- **Reactive world.**
+  - `CROSS_ROOM` reactions are queued for the other character and spoken on the next swap. Some also play a muffled line through the tube straight away.
+  - Used-up hotspots cycle through `BARKS` between repeats of their normal text.
+  - After 25 seconds without input, the character says an idle mutter (`IDLE_MUTTERS`, in three tide bands). The same line never plays twice in a row, and mutters wait until no modal, talk or message is showing.
+  - Lamp flicker, rain inside the window, storm volume (`Sfx.setStorm`) and camera sway all grow with the tide, and mute still applies.
