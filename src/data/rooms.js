@@ -1,17 +1,23 @@
 // Layout data. Hotspot rectangles are in 1280x720 game coordinates; keep them above y = 636,
-// where the inventory bar starts. After dropping in real art, run on localhost, press D and
-// drag to measure new rectangles (shift-click places the character).
+// where the inventory bar starts. After dropping in real art, run on localhost, press L and
+// drag to measure new rectangles (shift-click places the character and the floor line).
 
+// `faces`: which way each pose's art looks (1 right, -1 left). The idle pose faces the viewer
+// and is never flipped; the others are mirrored to face where the character is going.
 export const CHARACTERS = {
-  mara: { name: 'Mara', room: 'lamp', color: 0xb5413a, css: '#e0786f' },
-  tobin: { name: 'Tobin', room: 'cellar', color: 0xd9a441, css: '#e8c070' },
+  mara: { name: 'Mara', room: 'lamp', color: 0xb5413a, css: '#e0786f', faces: { act: 1, walk: 1, crouch: 1, talk: 1 } },
+  tobin: { name: 'Tobin', room: 'cellar', color: 0xd9a441, css: '#e8c070', faces: { act: -1, walk: 1, crouch: 1, talk: 1 } },
 };
 
+// Hotspots may set `stand: x` for where the character stops to use them; otherwise they stop
+// beside the hotspot on the side they approach from.
 export const ROOMS = {
   lamp: {
     name: 'The Lamp Room',
-    // x, y = feet position; h = on-screen height in pixels.
+    // x, y = start feet position; h = on-screen height in pixels.
     char: { x: 860, y: 655, h: 400 },
+    // Walkable strip of floor: feet stay on y, between minX and maxX.
+    floor: { minX: 130, maxX: 1180, y: 655 },
     // Glass of the window, where the tide view and signal flashes are drawn.
     window: { x: 905, y: 82, w: 180, h: 372 },
     hotspots: [
@@ -26,6 +32,7 @@ export const ROOMS = {
   cellar: {
     name: 'The Cellar',
     char: { x: 935, y: 665, h: 400 },
+    floor: { minX: 120, maxX: 1180, y: 665 },
     // Water depth per room state, as a fraction of char.h; the figure is cut off at the waterline.
     // Before the flood the depth follows the tide instead (see GameScene.waterDepth).
     wade: { after: 0.27 },

@@ -117,7 +117,7 @@ function drawRoom(scene, key) {
 }
 
 function drawCharacter(scene, key) {
-  const [id, pose] = key.split('_');
+  const [id, pose, frame] = key.split('_');
   const { tex, ctx } = canvas(scene, key, 300, 620);
   const coat = id === 'mara' ? '#59626b' : '#2e3a40';
   const accent = id === 'mara' ? '#b5413a' : '#d9a441';
@@ -131,8 +131,23 @@ function drawCharacter(scene, key) {
   ctx.ellipse(0, -6, 90, 14, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = '#1a1a1a';
-  ctx.fillRect(-45, -170, 34, 165);
-  ctx.fillRect(11, -170, 34, 165);
+  if (pose === 'walk') {
+    const stride = frame === 'a' ? 0.32 : -0.32;
+    for (const s of [stride, -stride]) {
+      ctx.save();
+      ctx.translate(0, -170);
+      ctx.rotate(s);
+      ctx.fillRect(-17, 0, 34, 168);
+      ctx.restore();
+    }
+  } else if (pose === 'crouch') {
+    ctx.fillRect(-45, -90, 34, 85);
+    ctx.fillRect(11, -90, 34, 85);
+    ctx.translate(0, 80);
+  } else {
+    ctx.fillRect(-45, -170, 34, 165);
+    ctx.fillRect(11, -170, 34, 165);
+  }
   ctx.fillStyle = coat;
   roundRect(ctx, -75, -470, 150, 320, 40);
   ctx.fill();
@@ -202,9 +217,85 @@ function drawScreen(scene, key) {
   tex.refresh();
 }
 
+/** A desk, a wall or the stairs, laid out so CLOSEUPS' text areas land on the blank page or stone. */
+function drawCloseup(scene, key) {
+  const id = key.replace('closeup_', '');
+  const { tex, ctx } = canvas(scene, key, WIDTH, HEIGHT);
+  const page = (x, y, w, h, angle, color = '#e9dcbc') => {
+    ctx.save();
+    ctx.translate(x + w / 2, y + h / 2);
+    ctx.rotate(angle);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(-w / 2 + 10, -h / 2 + 12, w, h);
+    ctx.fillStyle = color;
+    ctx.fillRect(-w / 2, -h / 2, w, h);
+    ctx.restore();
+  };
+  if (id === 'chalk' || id === 'bootprints') {
+    ctx.fillStyle = '#2c3438';
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    ctx.strokeStyle = 'rgba(10,14,16,0.7)';
+    ctx.lineWidth = 6;
+    if (id === 'chalk') {
+      for (let row = 0; row * 90 < HEIGHT; row++) {
+        for (let col = -1; col * 180 < WIDTH; col++) {
+          roundRect(ctx, col * 180 + (row % 2) * 90 + 6, row * 90 + 6, 168, 78, 14);
+          ctx.stroke();
+        }
+      }
+    } else {
+      for (let i = 0; i < 6; i++) {
+        ctx.fillStyle = i % 2 ? '#353e43' : '#3b454a';
+        ctx.fillRect(0, i * 120, WIDTH, 120);
+        ctx.beginPath();
+        ctx.moveTo(0, i * 120);
+        ctx.lineTo(WIDTH, i * 120);
+        ctx.stroke();
+      }
+      const print = (x, y, s, a) => {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(a);
+        ctx.fillStyle = 'rgba(18,22,24,0.75)';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 22 * s, 44 * s, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      };
+      for (let i = 0; i < 5; i++) {
+        print(470 + (i % 2) * 70, 650 - i * 125, 1.15, -0.1);
+        print(780 + (i % 2) * 55, 640 - i * 125, 0.85, 0.08);
+      }
+    }
+  } else {
+    ctx.fillStyle = '#3a2618';
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    if (id === 'letter') {
+      page(WIDTH * 0.3, HEIGHT * 0.16, WIDTH * 0.4, HEIGHT * 0.68, 0.03, '#efe4c8');
+    } else {
+      page(WIDTH * 0.1, HEIGHT * 0.12, WIDTH * 0.4, HEIGHT * 0.76, -0.02, '#e4d5b0');
+      page(WIDTH * 0.5, HEIGHT * 0.12, WIDTH * 0.4, HEIGHT * 0.76, 0.01);
+      ctx.strokeStyle = 'rgba(60,40,20,0.25)';
+      ctx.lineWidth = 2;
+      for (let y = HEIGHT * 0.2; y < HEIGHT * 0.84; y += 36) {
+        ctx.beginPath();
+        ctx.moveTo(WIDTH * 0.14, y);
+        ctx.lineTo(WIDTH * 0.46, y);
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.fillStyle = 'rgba(243, 230, 200, 0.2)';
+  ctx.font = `italic 18px ${SERIF}`;
+  ctx.textAlign = 'right';
+  ctx.fillText('placeholder art', WIDTH - 24, HEIGHT - 20);
+  tex.refresh();
+}
+
 export function makePlaceholder(scene, key, group) {
   if (group === 'room') drawRoom(scene, key);
   else if (group === 'character') drawCharacter(scene, key);
   else if (group === 'item' || group === 'prop') drawItem(scene, key);
+  else if (group === 'closeup') drawCloseup(scene, key);
   else drawScreen(scene, key);
 }

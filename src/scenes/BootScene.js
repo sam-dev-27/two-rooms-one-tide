@@ -1,5 +1,15 @@
 import { WIDTH, HEIGHT, FONT, COLORS } from '../config.js';
-import { ROOM_IMAGES, CHARACTER_IMAGES, ITEM_IMAGES, PROP_IMAGES, UI_IMAGES, CUTSCENE_IMAGES, AUDIO } from '../data/assets.js';
+import {
+  ROOM_IMAGES,
+  CHARACTER_IMAGES,
+  PORTRAIT_IMAGES,
+  ITEM_IMAGES,
+  PROP_IMAGES,
+  UI_IMAGES,
+  CUTSCENE_IMAGES,
+  CLOSEUP_IMAGES,
+  AUDIO,
+} from '../data/assets.js';
 import { makePlaceholder } from '../systems/Placeholders.js';
 import { trimTexture } from '../systems/TextureTools.js';
 import { sfx } from '../systems/Sfx.js';
@@ -7,13 +17,22 @@ import { sfx } from '../systems/Sfx.js';
 const IMAGE_GROUPS = [
   ['room', ROOM_IMAGES],
   ['character', CHARACTER_IMAGES],
+  ['portrait', PORTRAIT_IMAGES],
   ['item', ITEM_IMAGES],
   ['prop', PROP_IMAGES],
   ['screen', UI_IMAGES],
   ['screen', CUTSCENE_IMAGES],
+  ['closeup', CLOSEUP_IMAGES],
 ];
 
-const TRIM = { character: { maxSourceSize: 1024 }, item: { maxSourceSize: 384 }, prop: { maxSourceSize: 384 } };
+const TRIM = {
+  character: { maxSourceSize: 1024 },
+  portrait: { maxSourceSize: 512 },
+  item: { maxSourceSize: 384 },
+  prop: { maxSourceSize: 384 },
+};
+// Groups whose missing images fall back in code (portraits are cropped from the idle pose).
+const NO_PLACEHOLDER = new Set(['portrait']);
 
 export default class BootScene extends Phaser.Scene {
   constructor() {
@@ -67,7 +86,7 @@ export default class BootScene extends Phaser.Scene {
         if (this.textures.exists(key)) {
           if (TRIM[group]) trimTexture(this, key, TRIM[group]);
         } else {
-          makePlaceholder(this, key, group);
+          if (!NO_PLACEHOLDER.has(group)) makePlaceholder(this, key, group);
           missing.add(key);
         }
       }

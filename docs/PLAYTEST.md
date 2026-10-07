@@ -13,7 +13,8 @@ Ask afterwards:
 8. The rheostat hold: was it clear that you had to switch to Mara while Tobin held it? Was 8 seconds too tight or too loose?
 9. Did you see the writing on the window in the lightning?
 10. Was anything boring or too easy?
-11. Would you play another game like this?
+11. Did you always know what to do next? Did the Objective line or the arrow help?
+12. Would you play another game like this?
 
 Things to watch for:
 
@@ -25,6 +26,11 @@ Things to watch for:
 - Whether they read the tube options or always press 1.
 - How many tries the rheostat hold takes.
 - Whether the idle mutters or repeat-click remarks surprise them, or start to annoy them.
+- Whether they read the How to play card or click straight through it, and whether they ever reopen it (?).
+- Whether they read the Objective line in the top bar, and whether it ever sends them the wrong way.
+- Whether they find Hold Space on their own, from the tip, or not at all.
+- Whether walking feels slow, especially across the lamp room. Do they click empty floor, or only hotspots?
+- Whether they read the writing in the close-ups or click them away, and whether the lamp-lit and arrest beats feel like a reward or an interruption.
 
 ---
 

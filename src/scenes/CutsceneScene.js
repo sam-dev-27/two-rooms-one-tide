@@ -17,8 +17,13 @@ export default class CutsceneScene extends Phaser.Scene {
     super('Cutscene');
   }
 
-  create({ shots = OPENING, next = 'Game' } = {}) {
-    this.shots = shots;
+  /**
+   * `mode: 'opening'` resets the game state and starts `next`. `mode: 'beat'` is a mid-game
+   * cutscene: the Game and UI scenes sleep under it and are woken, untouched, when it ends.
+   */
+  create({ shots = OPENING, next = 'Game', mode = 'opening' } = {}) {
+    this.mode = mode;
+    this.shots = shots.map((s) => ({ ...s, image: this.stillFor(s) })).filter((s) => s.image);
     this.next = next;
     this.index = -1;
     this.done = false;
@@ -72,6 +77,15 @@ export default class CutsceneScene extends Phaser.Scene {
       this.rain.lineTo(d.x + d.len * 0.25, d.y - d.len);
     }
     this.rain.strokePath();
+  }
+
+  /** The shot's still, its fallback if the still is missing, or null to drop the shot. */
+  stillFor(shot) {
+    const missing = this.registry.get('missing');
+    const real = (key) => key && this.textures.exists(key) && !missing?.has(key);
+    if (real(shot.image)) return shot.image;
+    if (real(shot.fallback)) return shot.fallback;
+    return this.mode === 'beat' ? null : shot.image;
   }
 
   newDrop(y) {
@@ -193,6 +207,12 @@ export default class CutsceneScene extends Phaser.Scene {
     this.skipBtn.disableInteractive();
     this.cameras.main.fadeOut(skipped ? 450 : 1200, 0, 0, 0);
     this.cameras.main.once('camerafadeoutcomplete', () => {
+      if (this.mode === 'beat') {
+        this.scene.wake('UI');
+        this.scene.wake('Game');
+        this.scene.stop();
+        return;
+      }
       state.reset();
       this.scene.start(this.next);
     });

@@ -19,8 +19,11 @@ Three hands-on puzzles carry the tower work: a lens dial (wipe the soot, set the
 
 | Input | Action |
 | --- | --- |
-| Click or Space (opening cutscene) | Finish the caption, then go to the next one. Esc or the Skip button skips it |
-| Click | Look at, take, or use things |
+| Click or Space (cutscenes) | Finish the caption, then go to the next one. Esc or the Skip button skips it |
+| Click | Look at, take, or use things (the character walks over first) |
+| Click empty floor, or hold A/D or the arrow keys | Walk |
+| Hold Space or Shift | Show everything you can click in the room |
+| ? or F1, or the ? button | How to play |
 | Click an item, then a hotspot | Use the item there |
 | Click the hatch | Talk through the speaking tube (glows when there's something to say) |
 | Click an item, then the hatch | Send it to the other room |
@@ -32,6 +35,9 @@ Three hands-on puzzles carry the tower work: a lens dial (wipe the soot, set the
 | M | Mute |
 | Right-click or Esc | Drop the selected item, close dialogs |
 | A/D or arrows, 1-5, `.` `-` Space | Keyboard controls inside the lens, valve and shutter puzzles |
+| Click, Enter or Esc | Close a close-up (logbook, letter, chalk, ledger, boot prints) |
+
+The top bar always shows the active character's current objective.
 
 ## Run it locally
 
@@ -41,7 +47,7 @@ npm run serve    # python3 -m http.server 8000
 # open http://localhost:8000
 ```
 
-You need a local server: opening `index.html` directly blocks image loading. On localhost, press **D** to open the layout tool. It shows every hotspot, lets you drag to measure a new rectangle (the result is copied to the clipboard), and shift-click places the character.
+You need a local server: opening `index.html` directly blocks image loading. On localhost, press **L** to open the layout tool. It shows every hotspot and the walkable floor line, lets you drag to measure a new rectangle (the result is copied to the clipboard), and shift-click places the character and sets the floor line. Automation can set `window.__fastWalk = true` (it is on under WebDriver) so characters teleport instead of walking.
 
 ## How it's built
 

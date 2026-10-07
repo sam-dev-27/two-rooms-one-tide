@@ -14,6 +14,9 @@
     "assets:items": "node tools/generate.mjs --group items",
     "assets:ui": "node tools/generate.mjs --group ui",
     "assets:cutscene": "node tools/generate.mjs --group cutscene",
+    "assets:walk": "node tools/generate.mjs --group walk",
+    "assets:poses": "node tools/generate.mjs --group poses",
+    "assets:closeups": "node tools/generate.mjs --group closeups",
     "assets:dry": "node tools/generate.mjs --all --dry-run",
     "build:itch": "sh tools/package-itch.sh"
   },

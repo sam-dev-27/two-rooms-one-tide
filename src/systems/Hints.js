@@ -22,6 +22,18 @@ export function isStuck(state, now = Date.now()) {
   return !state.modal && now - Math.max(state.lastProgressAt, state.lastHintAt) > HINT_DELAY_MS;
 }
 
+/** The current step's short goal for `who` (default: the active character), or null once the story is done. */
+export function objective(state, who = state.active) {
+  const step = HINTS.find((h) => !h.done(state));
+  const o = step?.objective?.[who];
+  return (typeof o === 'function' ? o(state) : o) ?? null;
+}
+
+/** Hotspot id the current step points `who` at, if any. */
+export function objectiveTarget(state, who = state.active) {
+  return HINTS.find((h) => !h.done(state))?.target?.[who] ?? null;
+}
+
 export function useHint(state) {
   const text = nextHint(state);
   const { index } = current(state);

@@ -22,21 +22,77 @@ export const WRONG_ITEM = [
 ];
 
 // Hints: the first entry not yet done is shown. An array escalates on repeated presses.
+// `objective` is the short goal in the top bar for each character (a string, or a function of the
+// state); `target` is the hotspot the first-visit arrow points at.
 export const HINTS = [
-  { done: (s) => s.has('read_logbook'), text: 'Mara: Elias\'s logbook on the desk.' },
-  { done: (s) => s.has('knows_code'), text: 'Switch to Tobin (Tab) and look at the chalk on the cellar wall.' },
-  { done: (s) => s.has('talk_1'), text: 'Someone is calling through the dumbwaiter hatch. Click it with empty hands.' },
-  { done: (s) => s.has('drawer_open'), text: ['The chalk said LIT 1874.', 'Mara: enter 1874 on the desk drawer.'] },
-  { done: (s) => s.has('key_sent') || s.has('locker_open'), text: 'Select the brass key in Mara\'s bag, then click the hatch.' },
-  { done: (s) => s.has('locker_open'), text: 'Tobin: the key fits the steel locker.' },
-  { done: (s) => s.has('fuse_fitted'), text: 'Send the fuse up the hatch and fit it in the great lamp.' },
-  { done: (s) => s.has('lantern_set'), text: 'Mara: take a closer look at the great lamp.' },
-  { done: (s) => s.has('lens_wiped'), text: ['Tobin says the light on his wall is a smear.', 'Mara: wipe the lens in the lamp dial.'] },
-  { done: (s) => s.has('lens_set'), text: ['Tobin\'s chalk shows an anchor "to the well".', 'Turn the lens until the anchor sits over the WELL pointer.'] },
-  { done: (s) => s.has('knows_order'), text: 'Tobin: look at the glass plate by the chalk.' },
+  {
+    done: (s) => s.has('read_logbook'),
+    text: 'Mara: Elias\'s logbook on the desk.',
+    objective: { mara: 'Read Elias\'s logbook on the desk', tobin: (s) => (s.has('knows_code') ? 'Switch to Mara (Tab): the logbook' : 'Read the chalk marks on the wall') },
+    target: { mara: 'logbook', tobin: 'chalk' },
+  },
+  {
+    done: (s) => s.has('knows_code'),
+    text: 'Switch to Tobin (Tab) and look at the chalk on the cellar wall.',
+    objective: { mara: 'Switch to Tobin (Tab) in the cellar', tobin: 'Read the chalk marks on the wall' },
+    target: { tobin: 'chalk' },
+  },
+  {
+    done: (s) => s.has('talk_1'),
+    text: 'Someone is calling through the dumbwaiter hatch. Click it with empty hands.',
+    objective: { mara: 'Answer the speaking tube at the hatch', tobin: 'Answer the speaking tube at the hatch' },
+    target: { mara: 'hatch_lamp', tobin: 'hatch_cellar' },
+  },
+  {
+    done: (s) => s.has('drawer_open'),
+    text: ['The chalk said LIT 1874.', 'Mara: enter 1874 on the desk drawer.'],
+    objective: { mara: 'Open the desk drawer with the chalk code', tobin: 'Switch to Mara: her desk drawer' },
+  },
+  {
+    done: (s) => s.has('key_sent') || s.has('locker_open'),
+    text: 'Select the brass key in Mara\'s bag, then click the hatch.',
+    objective: { mara: 'Send the brass key down the hatch', tobin: 'Switch to Mara: she has a key for you' },
+  },
+  {
+    done: (s) => s.has('locker_open'),
+    text: 'Tobin: the key fits the steel locker.',
+    objective: { mara: 'Switch to Tobin: the key fits his locker', tobin: 'Open the steel locker with the key' },
+  },
+  {
+    done: (s) => s.has('fuse_fitted'),
+    text: 'Send the fuse up the hatch and fit it in the great lamp.',
+    objective: {
+      mara: (s) => (s.holds('fuse', 'mara') ? 'Fit the fuse in the great lamp' : 'Switch to Tobin: he has the fuse'),
+      tobin: (s) => (s.holds('fuse', 'tobin') ? 'Send the fuse up the hatch' : 'Switch to Mara: fit the fuse'),
+    },
+  },
+  {
+    done: (s) => s.has('lantern_set'),
+    text: 'Mara: take a closer look at the great lamp.',
+    objective: { mara: 'Take a closer look at the great lamp', tobin: 'Switch to Mara: the great lamp' },
+  },
+  {
+    done: (s) => s.has('lens_wiped'),
+    text: ['Tobin says the light on his wall is a smear.', 'Mara: wipe the lens in the lamp dial.'],
+    objective: {
+      mara: 'Clean the soot off the great lens',
+      tobin: (s) => (s.has('saw_smear') ? 'Switch to Mara: the lens needs cleaning' : 'Check the glass plate under the well'),
+    },
+  },
+  {
+    done: (s) => s.has('lens_set'),
+    text: ['Tobin\'s chalk shows an anchor "to the well".', 'Turn the lens until the anchor sits over the WELL pointer.'],
+    objective: { mara: 'Turn the lens: anchor over the WELL', tobin: 'Switch to Mara: line up the lens' },
+  },
+  {
+    done: (s) => s.has('knows_order'),
+    text: 'Tobin: look at the glass plate by the chalk.',
+    objective: { mara: 'Switch to Tobin: the glass plate', tobin: 'Read the colours on the glass plate' },
+  },
   {
     done: (s) => s.has('gasket'),
     text: ['Wheel three leaks. Elias taught Tobin to make gaskets from paper and grease.', 'Use Tobin\'s diary on the valves.'],
+    objective: { mara: 'Switch to Tobin: the leaking valves', tobin: 'Stop valve wheel three leaking' },
   },
   {
     done: (s) => s.has('valves_set'),
@@ -45,9 +101,18 @@ export const HINTS = [
       'Look at the backwards 1.',
       'Left to right: blue, yellow, red, green, white.',
     ],
+    objective: { mara: 'Switch to Tobin: set the valve wheels', tobin: 'Set the valve wheels from the plate' },
   },
-  { done: (s) => s.has('evidence_found'), text: 'Something floated up when the cellar flooded.' },
-  { done: (s) => s.has('lamp_lit'), text: 'Mara: the lamp has power now.' },
+  {
+    done: (s) => s.has('evidence_found'),
+    text: 'Something floated up when the cellar flooded.',
+    objective: { mara: 'Switch to Tobin: something floated up', tobin: 'Check what floated up in the flood' },
+  },
+  {
+    done: (s) => s.has('lamp_lit'),
+    text: 'Mara: the lamp has power now.',
+    objective: { mara: 'Light the great lamp', tobin: 'Switch to Mara: the lamp has power' },
+  },
   {
     done: (s) => s.has('lamp_full'),
     text: [
@@ -55,14 +120,98 @@ export const HINTS = [
       'Tobin: the rheostat on the pipe by the wheels.',
       'Tobin holds the rheostat at FULL. Then switch to Mara (Tab) and click the great lamp before it slips.',
     ],
+    objective: {
+      mara: (s) => (s.holding ? 'Latch the great lamp, quick!' : s.has('talk_6') ? 'Switch to Tobin: the rheostat' : 'Ask Tobin about the dim beam'),
+      tobin: (s) => (s.holding ? 'Hold on! Switch to Mara (Tab)' : 'Hold the rheostat at FULL'),
+    },
   },
   {
     done: (s) => s.has('ledger_sent') || s.has('signalled_truth') || s.has('signalled_sos'),
     text: 'To accuse Crane, Mara needs the ledger. Tobin can send it up. Or signal for rescue without it.',
+    objective: {
+      mara: 'Signal the cutter, or get the ledger first',
+      tobin: (s) => (s.holds('ledger', 'tobin') ? 'Send the ledger up to Mara' : 'Switch to Mara: signal the cutter'),
+    },
   },
-  { done: (s) => s.has('signalled_truth') || s.has('signalled_sos'), text: 'Mara: signal the cutter with the great lamp. The card shows every letter.' },
-  { done: (s) => s.has('final_seen'), text: 'Tobin: the glass plate. Then the hatch.' },
+  {
+    done: (s) => s.has('signalled_truth') || s.has('signalled_sos'),
+    text: 'Mara: signal the cutter with the great lamp. The card shows every letter.',
+    objective: { mara: 'Signal the cutter with the great lamp', tobin: 'Switch to Mara: signal the cutter' },
+  },
+  {
+    done: (s) => s.has('final_seen'),
+    text: 'Tobin: the glass plate. Then the hatch.',
+    objective: {
+      mara: (s) => (s.has('final_plate') ? 'Go to the hatch' : 'Switch to Tobin (Tab)'),
+      tobin: (s) => (s.has('final_plate') ? 'Go to the hatch' : 'Look at the glass plate'),
+    },
+  },
 ];
+
+export const REVEAL_TIP = 'Hold Space: show what you can click';
+
+// The "How to play" card after the opening. `icon` names a small drawing in UIScene.
+export const HOW_TO = [
+  { icon: 'click', text: 'Click things to look at them, take them or use them. Click an item in the bag, then a thing, to use it there.' },
+  { icon: 'walk', text: 'Click the floor, or hold A / D or the arrow keys, to walk.' },
+  { icon: 'swap', text: 'Tab switches between Mara in the lamp room and Tobin in the cellar.' },
+  { icon: 'hatch', text: 'The dumbwaiter hatch sends items between the rooms. The speaking tube beside it lets them talk.' },
+  { icon: 'board', text: 'C opens the case board. H gives a hint; press it again for a stronger one.' },
+  { icon: 'reveal', text: 'Hold Space to show everything you can click.' },
+];
+
+// Painted close-ups with the writing laid over them. `area` is the blank page or wall in the
+// image, as fractions of its width and height (a list of areas shares the lines out across
+// pages, each with an optional `angle`); `caption` sits under the picture.
+export const CLOSEUPS = {
+  logbook: {
+    image: 'closeup_logbook',
+    title: 'Elias\'s logbook',
+    lines: ['−·−·\'s men on the rocks again.', 'Tell −− everything Thursday.', 'The drawer code is chalked below.', 'The well flips everything.'],
+    area: [
+      { x: 0.215, y: 0.21, w: 0.25, h: 0.38, angle: -5 },
+      { x: 0.42, y: 0.27, w: 0.28, h: 0.36, angle: 3 },
+    ],
+    ink: '#2b2116',
+    size: 25,
+  },
+  chalk: {
+    image: 'closeup_chalk',
+    title: 'Chalk on the cellar wall',
+    lines: ['LIT 1874', 'drawer', '', '      to the well'],
+    area: { x: 0.36, y: 0.28, w: 0.42, h: 0.5 },
+    angle: -3,
+    ink: '#ebe7da',
+    size: 44,
+    anchor: true,
+  },
+  ledger: {
+    image: 'closeup_ledger',
+    title: 'The ledger',
+    lines: ['Payouts. Ships lost to "the Triangle".', 'Marigold. Reef. Paid in full.', 'T. — low nights — £40.', 'M. — no signal logged, Marigold.'],
+    area: [
+      { x: 0.21, y: 0.17, w: 0.26, h: 0.34, angle: -6 },
+      { x: 0.52, y: 0.36, w: 0.27, h: 0.3, angle: -6 },
+    ],
+    ink: '#2a1d14',
+    size: 23,
+  },
+  bootprints: {
+    image: 'closeup_bootprints',
+    title: 'The cellar stairs',
+    lines: [],
+    caption: 'Two sets of boot prints, one smaller. One set never comes back down.',
+  },
+  letter: {
+    image: 'closeup_letter',
+    title: 'Your letter',
+    lines: ['Thursday.', 'If it\'s true, God help you.', '— M.'],
+    area: { x: 0.3, y: 0.34, w: 0.4, h: 0.36 },
+    angle: -14,
+    ink: '#241a12',
+    size: 36,
+  },
+};
 
 // Trust between the two leads: what the player has them admit (or hide) moves it.
 export const TRUST_DELTA = { clean: 1, deflect: 0, lie: -1 };
@@ -397,6 +546,8 @@ export const ENDINGS = {
   truth: {
     title: 'CRANE. UNDERSTOOD.',
     image: 'ending_truth',
+    // Cutscene beat (BEATS in cutscenes.js) played between the cutter's reply and this card.
+    beat: 'arrest',
     text:
       'The cutter answers: CRANE. UNDERSTOOD. By noon the harbourmaster is in irons and the Marigold is no longer a mystery of the Triangle. ' +
       'At the inquest Crane says only one thing: "I never set foot on that rock. Ask the two who did."',

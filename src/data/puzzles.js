@@ -117,6 +117,8 @@ function concealChoice(api, { item, title, text, keep, tell, hiddenFlag, toldFla
   api.choice({
     title,
     text,
+    who: api.actor,
+    worried: true,
     closable: false,
     options: [
       {
@@ -176,6 +178,7 @@ export const HANDLERS = {
   // ---- Mara, lamp room ----
   logbook(api, item) {
     if (item) return api.wrongItem();
+    api.closeup('logbook');
     if (api.has('read_logbook')) {
       return api.say('"−·−·\'s men on the rocks again." "Tell −− everything Thursday." "The drawer code is chalked below." "The well flips everything."');
     }
@@ -206,7 +209,7 @@ export const HANDLERS = {
         api.give('key');
         api.give('letter');
         api.card('letter');
-        concealChoice(api, {
+        api.closeup('letter', () => concealChoice(api, {
           item: 'letter',
           title: 'Your letter',
           text: '"Thursday. If it\'s true, God help you. — M."\n\nYou wrote it a week ago. Tobin will ask what was in the drawer.',
@@ -216,7 +219,7 @@ export const HANDLERS = {
           toldFlag: 'letter_told',
           hiddenText: 'You fold the letter into your coat.',
           toldText: 'You keep the letter out. Tobin should hear it from you.',
-        });
+        }));
       },
     });
   },
@@ -265,6 +268,7 @@ export const HANDLERS = {
       api.sfx('unlock');
       api.refresh();
       for (const line of HOLD_TEXT.latch) api.say(line);
+      api.cutscene('lamplit');
       return;
     }
     if (api.has('signalled_truth') || api.has('signalled_sos')) return api.say('The great lamp blazes.');
@@ -305,6 +309,7 @@ export const HANDLERS = {
   // ---- Tobin, cellar ----
   chalk(api, item) {
     if (item) return api.wrongItem();
+    api.closeup('chalk');
     api.set('knows_code');
     api.set('knows_anchor');
     api.note('chalk', 'Chalk in the cellar: "LIT 1874 — drawer". Beside it, a chalk anchor with an arrow: "to the well".');
@@ -393,6 +398,7 @@ export const HANDLERS = {
   plank(api, item) {
     if (item) return api.wrongItem();
     api.set('evidence_found');
+    api.closeup('ledger');
     api.note('evidence', 'Under the cellar floor: a photograph of Crane watching the Marigold sink, and a ledger of insurance payouts for ships "lost to the Triangle".');
     api.say('Under the floating plank, a hollow in the floor. Wrapped in oilskin: a photograph of Harbourmaster Crane watching a ship go down, and a ledger of insurance payouts.');
     api.give('photo');
@@ -421,6 +427,7 @@ export const HANDLERS = {
   stairs(api, item) {
     if (item) return api.wrongItem();
     if (api.has('prints_gone')) return api.say('Sea water laps the third step. Whatever prints were on the stairs are gone. The door at the top is still barred.');
+    api.closeup('bootprints');
     api.set('saw_prints');
     api.card('prints');
     api.say('The door at the top of the stairs is barred from outside. On the damp steps, two sets of boot prints, one smaller. One set never comes back down.');

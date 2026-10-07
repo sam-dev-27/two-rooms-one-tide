@@ -198,6 +198,46 @@
       "ref": "cellar_before",
       "out": "assets/cutscene/cut_barred.png",
       "prompt": "Same painting style, same stone walls, wide 16:9 framing. Now seen from outside on a dark stone landing at night: a heavy wooden door, shut, with a thick iron bar dropped across it in iron brackets. Warm amber lantern light glows through the crack under the door from the room beyond. Cold blue darkness, wet stone. No people, no text."
-    }
+    },
+    {
+      "id": "cut_lamplit",
+      "groups": ["cutscene"],
+      "op": "edit",
+      "ref": "title",
+      "out": "assets/cutscene/cut_lamplit.png",
+      "prompt": "Keep this exact image: same wide 16:9 framing, same camera, same lighthouse with its cutaway stairs on the same rock, same storybook painting style and brushwork. Only change the weather and light: a night storm with rain and high waves, the lamp blazing with warm amber light, its bright beam sweeping left across the dark sea and lighting up the broken hull of a wrecked ship stranded on the reef in the middle distance. No people visible, no text."
+    },
+    {
+      "id": "cut_arrest",
+      "groups": ["cutscene"],
+      "op": "generate",
+      "aspect": "16:9",
+      "out": "assets/cutscene/cut_arrest.png",
+      "prompt": "[style]. A small stone harbour quay at dawn after a storm, pink and teal sky, a grey coastguard cutter moored right alongside the quay. A white searchlight beam from the cutter shines down on three small figures walking along the quay: a heavy-set bearded harbourmaster in a dark coat and peaked cap, his wrists chained together in front of him, held by the arms by two coastguard men in navy uniforms, one on each side. Seen from a distance, calm, not violent."
+    },
+
+    { "id": "mara_walk_a_raw", "groups": ["walk"], "op": "edit", "ref": "mara_raw", "out": "tools/raw/mara_walk_a_raw.png", "prompt": "Keep this exact character and outfit: dark hair in a low bun, red wool scarf, long grey wool coat, dark trousers, black boots, brass lantern held in one hand. Now shown in full side profile walking to the right, mid-stride with the left leg forward, the lantern swinging at her side. Full body, feet visible, same scale, plain white background, no ground shadow." },
+    { "id": "mara_walk_a", "groups": ["walk"], "op": "cutout", "ref": "mara_walk_a_raw", "out": "assets/characters/mara_walk_a.png" },
+    { "id": "mara_walk_b_raw", "groups": ["walk"], "op": "edit", "ref": "mara_raw", "out": "tools/raw/mara_walk_b_raw.png", "prompt": "Keep this exact character and outfit: dark hair in a low bun, red wool scarf, long grey wool coat, dark trousers, black boots, brass lantern held in one hand. Now shown in full side profile walking to the right, mid-stride with the right leg forward, the lantern swinging at her side. Full body, feet visible, same scale, plain white background, no ground shadow." },
+    { "id": "mara_walk_b", "groups": ["walk"], "op": "cutout", "ref": "mara_walk_b_raw", "out": "assets/characters/mara_walk_b.png" },
+    { "id": "tobin_walk_a_raw", "groups": ["walk"], "op": "edit", "ref": "tobin_raw", "out": "tools/raw/tobin_walk_a_raw.png", "prompt": "Keep this exact character and outfit: tousled ginger hair, round glasses, teal coat, mustard cable-knit sweater, dark trousers rolled at the ankle, black boots, a small brown book in one hand. Now shown in full side profile walking to the right, mid-stride with the left leg forward. Full body, feet visible, same scale, plain white background, no ground shadow." },
+    { "id": "tobin_walk_a", "groups": ["walk"], "op": "cutout", "ref": "tobin_walk_a_raw", "out": "assets/characters/tobin_walk_a.png" },
+    { "id": "tobin_walk_b_raw", "groups": ["walk"], "op": "edit", "ref": "tobin_raw", "out": "tools/raw/tobin_walk_b_raw.png", "prompt": "Keep this exact character and outfit: tousled ginger hair, round glasses, teal coat, mustard cable-knit sweater, dark trousers rolled at the ankle, black boots, a small brown book in one hand. Now shown in full side profile walking to the right, mid-stride with the right leg forward. Full body, feet visible, same scale, plain white background, no ground shadow." },
+    { "id": "tobin_walk_b", "groups": ["walk"], "op": "cutout", "ref": "tobin_walk_b_raw", "out": "assets/characters/tobin_walk_b.png" },
+
+    { "id": "mara_crouch_raw", "groups": ["poses"], "op": "edit", "ref": "mara_raw", "out": "tools/raw/mara_crouch_raw.png", "prompt": "Keep this exact character and outfit: dark hair in a low bun, red wool scarf, long grey wool coat, dark trousers, black boots, brass lantern in one hand. Now kneeling on one knee in side view facing right, holding the lantern low and looking closely at something on the floor in front of her. Full body, feet visible, plain white background, no ground shadow." },
+    { "id": "mara_crouch", "groups": ["poses"], "op": "cutout", "ref": "mara_crouch_raw", "out": "assets/characters/mara_crouch.png" },
+    { "id": "tobin_crouch_raw", "groups": ["poses"], "op": "edit", "ref": "tobin_raw", "out": "tools/raw/tobin_crouch_raw.png", "prompt": "Keep this exact character and outfit: tousled ginger hair, round glasses, teal coat, mustard cable-knit sweater, dark trousers rolled at the ankle, black boots. Now crouching low in side view facing right, one hand reaching toward something on the floor in front of him, peering at it through his glasses. Full body, feet visible, plain white background, no ground shadow." },
+    { "id": "tobin_crouch", "groups": ["poses"], "op": "cutout", "ref": "tobin_crouch_raw", "out": "assets/characters/tobin_crouch.png" },
+    { "id": "mara_talk_raw", "groups": ["poses"], "op": "edit", "ref": "mara_raw", "out": "tools/raw/mara_talk_raw.png", "prompt": "Keep this exact character and outfit: dark hair in a low bun, red wool scarf, long grey wool coat, dark trousers, black boots, brass lantern in one hand. Now standing in three-quarter view turned toward the right, leaning forward slightly, the empty palm of her free hand cupped beside her open mouth as if calling softly into an opening in a wall. Full body, feet visible, plain white background, no other objects, no ground shadow." },
+    { "id": "mara_talk", "groups": ["poses"], "op": "cutout", "ref": "mara_talk_raw", "out": "assets/characters/mara_talk.png" },
+    { "id": "tobin_talk_raw", "groups": ["poses"], "op": "edit", "ref": "tobin_raw", "out": "tools/raw/tobin_talk_raw.png", "prompt": "Keep this exact character and outfit: tousled ginger hair, round glasses, teal coat, mustard cable-knit sweater, dark trousers rolled at the ankle, black boots, a small brown book in one hand. Now standing in three-quarter view turned toward the right, leaning forward slightly, the empty palm of his free hand cupped beside his open mouth as if calling softly into an opening in a wall. Full body, feet visible, plain white background, no other objects, no ground shadow." },
+    { "id": "tobin_talk", "groups": ["poses"], "op": "cutout", "ref": "tobin_talk_raw", "out": "assets/characters/tobin_talk.png" },
+
+    { "id": "closeup_logbook", "groups": ["closeups"], "op": "generate", "aspect": "16:9", "out": "assets/closeups/closeup_logbook.png", "prompt": "[style]. Close-up seen from above of an open leather-bound lighthouse keeper's logbook on a worn wooden desk, warm oil lamp light from the side, a quill pen and an ink pot beside it. The two aged cream pages are completely blank: no writing, no letters, no numbers, no lines of text." },
+    { "id": "closeup_chalk", "groups": ["closeups"], "op": "generate", "aspect": "16:9", "out": "assets/closeups/closeup_chalk.png", "prompt": "[style]. Close-up of a rough grey stone cellar wall filling the whole frame, even cold blue-grey lantern light, white chalk tally marks and scratch lines on the stones around the edges, and one large smooth flat slab of grey stone in the centre left completely empty. No letters, no words, no numbers, no signature, no text." },
+    { "id": "closeup_ledger", "groups": ["closeups"], "op": "generate", "aspect": "16:9", "out": "assets/closeups/closeup_ledger.png", "prompt": "[style]. Close-up seen from above of an open accounts ledger on a dark wooden desk, pages ruled with faint columns and rows, all entries empty, brown water stains on the paper, a brass dip pen lying across it, lamplight. No writing, no letters, no numbers, no text." },
+    { "id": "closeup_bootprints", "groups": ["closeups"], "op": "generate", "aspect": "16:9", "out": "assets/closeups/closeup_bootprints.png", "prompt": "[style]. Close-up looking down at three worn wet stone stair steps glistening in cold lantern light. Muddy prints of boot soles climb the steps: shoe-shaped sole prints with a separate heel mark and tread pattern, no toes. One trail of large wide heavy boot soles on the left and one trail of much smaller narrow boot soles on the right. No people, no text." },
+    { "id": "closeup_letter", "groups": ["closeups"], "op": "generate", "aspect": "16:9", "out": "assets/closeups/closeup_letter.png", "prompt": "[style]. Close-up seen from above of a folded letter half opened on a wooden desk, aged cream paper that is completely blank, a broken red wax seal on the fold, warm lamplight. No writing, no letters, no numbers, no text." }
   ]
 }

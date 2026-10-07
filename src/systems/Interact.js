@@ -107,6 +107,17 @@ export function createApi(state, view) {
     end: (id) => view.end(id),
     refresh: () => view.refresh(),
 
+    /** Shows a painted close-up (CLOSEUPS[id]); `then` runs once it is closed. */
+    closeup(id, then) {
+      if (view.closeup) view.closeup(id, then);
+      else then?.();
+    },
+    /** Plays a short cutscene beat (BEATS[id]) and returns to the game; `then` runs afterwards. */
+    cutscene(id, then) {
+      if (view.cutscene) view.cutscene(id, then);
+      else then?.();
+    },
+
     wrongItem() {
       view.sfx('error');
       view.say(WRONG_ITEM[Math.floor(Math.random() * WRONG_ITEM.length)]);

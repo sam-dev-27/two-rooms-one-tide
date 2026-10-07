@@ -27,6 +27,9 @@ class Emitter {
   }
 }
 
+// Tips the player has already learned; they survive "Play again".
+const PERSISTENT_SEEN = ['howto', 'space_reveal'];
+
 export class GameState extends Emitter {
   constructor() {
     super();
@@ -40,7 +43,7 @@ export class GameState extends Emitter {
     this.arrivals = { mara: [], tobin: [] };
     this.roomStates = { lamp: 'before', cellar: 'before' };
     this.notes = [];
-    this.seen = new Set();
+    this.seen = new Set([...(this.seen ?? [])].filter((id) => PERSISTENT_SEEN.includes(id)));
     this.selected = null;
     this.modal = false;
     this.hintsUsed = 0;

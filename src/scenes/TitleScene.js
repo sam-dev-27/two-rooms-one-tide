@@ -31,7 +31,7 @@ export default class TitleScene extends Phaser.Scene {
     this.tweens.add({ targets: prompt, alpha: 0.35, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
 
     this.add
-      .text(84, HEIGHT - 100, 'Tab: switch character    C: case board    H: hint    N: notes    M: sound', {
+      .text(84, HEIGHT - 100, 'A/D: walk    Space: show hotspots    Tab: switch    C: case board    H: hint    ?: help    M: sound', {
         fontFamily: FONT,
         fontSize: '18px',
         color: COLORS.paperCss,

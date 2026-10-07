@@ -1,11 +1,13 @@
 import { WIDTH, HEIGHT, FONT, COLORS } from '../config.js';
 import { ROOMS, CHARACTERS } from '../data/rooms.js';
 import { ITEMS } from '../data/items.js';
-import { TWIST_CARD, endingCard, IDLE_MUTTERS, LIGHTNING_TEXT, tideBandIndex } from '../data/text.js';
+import { TWIST_CARD, ENDINGS, endingCard, IDLE_MUTTERS, LIGHTNING_TEXT, tideBandIndex } from '../data/text.js';
+import { BEATS } from '../data/cutscenes.js';
 import { epilogueLine } from '../data/board.js';
 import { lightningPending, lightningStrike } from '../data/puzzles.js';
 import { state } from '../systems/State.js';
 import { createApi, interact, pendingTalk } from '../systems/Interact.js';
+import { objectiveTarget } from '../systems/Hints.js';
 import { sfx } from '../systems/Sfx.js';
 
 const listItems = (items) => {
@@ -21,6 +23,20 @@ const STRIKE_REVEAL_MS = [20_000, 30_000];
 const STRIKE_FIRST_MS = 9_000;
 const STRIKE_AMBIENT_MS = [35_000, 55_000];
 const REVEAL_MS = 3000;
+// Walking: feet slide at WALK_SPEED px/s while the frames cycle; walk frames face right. The idle
+// pose faces the viewer, so it can't be the passing frame between two side-on strides.
+const WALK_SPEED = 280;
+const HOLD_WALK_BOOST = 1.5;
+const WALK_FPS = 5;
+const WALK_CYCLE = ['walk_a', 'walk_b'];
+const BOB_PX = 5;
+const ARRIVE_PX = 3;
+// Hotspots whose centre is below this line are examined crouching.
+const LOW_HOTSPOT_Y = 430;
+const POSE_MS = { act: 700, crouch: 950 };
+// A crouch is drawn at its own size, so it is fitted to this fraction of the standing height.
+const CROUCH_H = 0.68;
+const BEAT_DELAY_MS = 1300;
 
 export default class GameScene extends Phaser.Scene {
   constructor() {
@@ -34,6 +50,15 @@ export default class GameScene extends Phaser.Scene {
     this.layoutAllowed = ['localhost', '127.0.0.1'].includes(location.hostname) || location.search.includes('debug');
     this.zones = [];
     this.layoutLabels = [];
+    // Where each character stands in their room; presentation only, kept across swaps.
+    this.pos = Object.fromEntries(Object.entries(CHARACTERS).map(([who, c]) => [who, ROOMS[c.room].char.x]));
+    this.facing = { mara: 1, tobin: -1 };
+    this.walk = null;
+    this.moving = false;
+    this.walkClock = 0;
+    this.pose = 'idle';
+    this.revealOn = false;
+    this.arrowTarget = null;
 
     this.bg = this.add.image(0, 0, this.roomKey()).setOrigin(0);
     this.windowView = this.add.image(0, 0, 'lamp_after').setOrigin(0).setVisible(false);
@@ -51,6 +76,7 @@ export default class GameScene extends Phaser.Scene {
     this.legs = this.add.image(0, 0, state.active).setOrigin(0.5, 1).setTint(0x4a7d8f).setAlpha(0.22).setVisible(false);
     this.ripple = this.add.graphics().setVisible(false);
     this.rippleRing = this.add.graphics().setVisible(false);
+    this.revealLayer = this.add.container(0, 0).setAlpha(0);
     this.hoverGfx = this.add.graphics();
     this.hoverLabel = this.add
       .text(0, 0, '', {
@@ -70,7 +96,7 @@ export default class GameScene extends Phaser.Scene {
       .setDepth(21);
     this.layoutGfx = this.add.graphics();
     this.layoutText = this.add
-      .text(12, 64, '', {
+      .text(12, 78, '', {
         fontFamily: 'monospace',
         fontSize: '14px',
         color: '#7fffd4',
@@ -85,20 +111,33 @@ export default class GameScene extends Phaser.Scene {
     this.scene.launch('UI');
     this.ui = this.scene.get('UI');
 
-    this.input.keyboard.addCapture('TAB');
-    this.input.keyboard.on('keydown-TAB', () => this.swap());
-    this.input.keyboard.on('keydown-D', () => this.toggleLayoutMode());
+    const kb = this.input.keyboard;
+    kb.addCapture('TAB,SPACE');
+    kb.on('keydown-TAB', () => this.swap());
+    kb.on('keydown-L', () => this.toggleLayoutMode());
+    this.keys = kb.addKeys({ a: 'A', d: 'D', left: 'LEFT', right: 'RIGHT' });
+    for (const k of ['SPACE', 'SHIFT']) {
+      kb.on(`keydown-${k}`, () => this.showReveal(true));
+      kb.on(`keyup-${k}`, () => this.showReveal(false));
+    }
+    this.input.on('pointerdown', (p, over) => {
+      if (over.length || p.rightButtonDown() || !this.playing || state.modal || this.busy || this.layoutMode) return;
+      if (!this.canWalk()) return;
+      this.walkTo(p.x);
+    });
+    this.events.on('wake', this.onWake, this);
     state.on('request-swap', this.swap, this);
     state.on('flag', this.onFlag, this);
     state.on('tide', this.onTide, this);
     state.on('flash', this.flashWindow, this);
-    state.on('hold', this.renderOverlays, this);
+    state.on('hold', this.onHold, this);
     state.on('muffled', (text) => this.time.delayedCall(700, () => this.ui.say(text)), this);
     const onInput = () => state.noteInput();
     window.addEventListener('pointerdown', onInput);
     window.addEventListener('keydown', onInput);
     this.events.once('shutdown', () => {
       state.offContext(this);
+      this.events.off('wake', this.onWake, this);
       window.removeEventListener('pointerdown', onInput);
       window.removeEventListener('keydown', onInput);
     });
@@ -111,7 +150,12 @@ export default class GameScene extends Phaser.Scene {
     this.cameras.main.fadeIn(500);
     this.time.delayedCall(600, () => {
       this.playing = true;
-      this.api.toast('look', 'look');
+      const begin = () => {
+        this.api.toast('look', 'look');
+        this.introduceRoom();
+      };
+      if (state.seen.has('howto')) begin();
+      else this.ui.howTo(begin);
     });
   }
 
@@ -122,9 +166,120 @@ export default class GameScene extends Phaser.Scene {
       if (expired) this.api.holdExpired(expired);
     }
     if (!this.playing) return;
+    if (this.revealOn && (state.modal || this.busy)) this.showReveal(false);
+    this.updateWalk(delta);
     this.updateAtmosphere(time, delta);
     this.updateLightning(delta);
     this.updateIdle();
+  }
+
+  // ---------- walking ----------
+
+  /** Automation (tools/playthrough.browser.js, webdriver) teleports instead of walking. */
+  fastWalk() {
+    return window.__fastWalk ?? navigator.webdriver === true;
+  }
+
+  /** The character holding something in place (the rheostat) can't walk away from it. */
+  canWalk() {
+    return !state.modal && !this.busy && !this.layoutMode && state.holding?.by !== state.active;
+  }
+
+  floor() {
+    return ROOMS[state.room].floor;
+  }
+
+  get charX() {
+    return this.pos[state.active];
+  }
+
+  /** Walks to x (clamped to the floor), then runs `onArrive` facing `faceX`. A new call retargets. */
+  walkTo(x, onArrive = null, faceX = null) {
+    const { minX, maxX } = this.floor();
+    const target = Phaser.Math.Clamp(Math.round(x), minX, maxX);
+    if (this.fastWalk() || Math.abs(target - this.charX) <= ARRIVE_PX) {
+      this.pos[state.active] = target;
+      this.walk = null;
+      this.arrive(onArrive, faceX);
+      return;
+    }
+    this.walk = { x: target, onArrive, faceX };
+  }
+
+  /** Stops on the spot, turns toward `faceX` and runs the pending action. */
+  arrive(onArrive, faceX) {
+    if (faceX !== null && faceX !== undefined && Math.abs(faceX - this.charX) > 4) this.facing[state.active] = Math.sign(faceX - this.charX);
+    this.stopWalking();
+    onArrive?.();
+  }
+
+  stopWalking() {
+    const wasMoving = this.moving;
+    this.moving = false;
+    this.walkClock = 0;
+    if (wasMoving || this.character.x !== this.charX) this.placeCharacter(this.pose === 'walk_a' || this.pose === 'walk_b' ? 'idle' : this.pose);
+  }
+
+  cancelWalk() {
+    this.walk = null;
+    if (this.moving) this.stopWalking();
+  }
+
+  updateWalk(delta) {
+    const k = this.keys;
+    const keyDir = this.canWalk() ? (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0) : 0;
+    if (keyDir) this.walk = null;
+    const walking = keyDir || (this.walk && !state.modal && !this.busy);
+    if (!walking) {
+      if (this.moving) this.stopWalking();
+      return;
+    }
+    const { minX, maxX, y } = this.floor();
+    const x = this.charX;
+    const target = keyDir ? (keyDir > 0 ? maxX : minX) : this.walk.x;
+    const dx = target - x;
+    const step = (WALK_SPEED * (state.holding ? HOLD_WALK_BOOST : 1) * delta) / 1000;
+    if (Math.abs(dx) <= Math.max(step, ARRIVE_PX)) {
+      this.pos[state.active] = target;
+      if (keyDir) {
+        // Pressed against the end of the floor: stand, facing that way.
+        this.facing[state.active] = keyDir;
+        if (this.moving) this.stopWalking();
+        return;
+      }
+      const { onArrive, faceX } = this.walk;
+      this.walk = null;
+      this.arrive(onArrive, faceX);
+      return;
+    }
+    const dir = Math.sign(dx);
+    this.pos[state.active] = x + dir * step;
+    this.facing[state.active] = dir;
+    state.noteInput();
+    this.actTimer?.remove();
+    if (!this.moving) {
+      this.moving = true;
+      this.tweens.killTweensOf(this.character);
+      this.walkClock = 0;
+    }
+    this.walkClock += delta;
+    const t = (this.walkClock * WALK_FPS) / 1000;
+    const pose = WALK_CYCLE[Math.floor(t) % WALK_CYCLE.length];
+    if (pose !== this.pose || this.character.flipX !== this.flipFor(pose)) this.setPose(pose);
+    // One bob per stride: lowest as each frame lands, highest mid-stride.
+    this.character.setPosition(this.pos[state.active], y - BOB_PX * Math.sin((t % 1) * Math.PI));
+    if (this.wadeDepth > 0) this.applyWading(this.wadeDepth);
+  }
+
+  /** Where the character stops to use a hotspot: its `stand`, or beside it on the near side. */
+  standX(hs) {
+    if (hs.stand !== undefined) return hs.stand;
+    const { minX, maxX } = this.floor();
+    const cx = hs.x + hs.w / 2;
+    const off = Phaser.Math.Clamp(hs.w / 2 + 30, 60, 200);
+    const sides = [cx - off, cx + off].filter((x) => x >= minX && x <= maxX);
+    if (!sides.length) return Phaser.Math.Clamp(cx, minX, maxX);
+    return sides.reduce((a, b) => (Math.abs(b - this.charX) < Math.abs(a - this.charX) ? b : a));
   }
 
   // ---------- reactive world: idle mutters, lightning, tide atmosphere ----------
@@ -243,10 +398,36 @@ export default class GameScene extends Phaser.Scene {
       lens: (opts) => this.ui.lens(opts),
       valves: (opts) => this.ui.valves(opts),
       morse: (opts) => this.ui.morse(opts),
-      talk: (lines, onDone, onChoose) => this.ui.talk(lines, onDone, onChoose),
+      talk: (lines, onDone, onChoose) => {
+        this.talkPose();
+        this.ui.talk(
+          lines,
+          () => {
+            if (this.pose === 'talk' && !this.moving) this.placeCharacter('idle');
+            onDone?.();
+          },
+          onChoose,
+        );
+      },
+      closeup: (id, then) => this.ui.closeup(id, then),
+      cutscene: (id, then) => {
+        this.busy = true;
+        this.time.delayedCall(BEAT_DELAY_MS, () => {
+          this.busy = false;
+          this.playBeat(id, then);
+        });
+      },
       ending: (id, onDone) => this.showEnding(id, onDone),
       end: (id) => this.endGame(id),
     };
+  }
+
+  /** Speaking into the tube: face the hatch in the talk pose until the conversation ends. */
+  talkPose() {
+    const hatch = ROOMS[state.room].hotspots.find((h) => h.handler === 'hatch');
+    const dx = hatch.x + hatch.w / 2 - this.charX;
+    if (Math.abs(dx) > 4) this.facing[state.active] = Math.sign(dx);
+    this.strikePose('talk');
   }
 
   // ---------- room rendering ----------
@@ -262,7 +443,12 @@ export default class GameScene extends Phaser.Scene {
     this.bg.setTexture(this.roomKey()).setDisplaySize(WIDTH, HEIGHT);
     this.wadeTween?.remove();
     this.wadeTween = null;
-    this.placeCharacter(state.active);
+    this.walk = null;
+    this.moving = false;
+    this.actTimer?.remove();
+    this.holdingPose = state.holding?.by === state.active;
+    this.placeCharacter(this.holdingPose ? 'act' : 'idle');
+    this.clearArrow();
     this.buildHotspots();
     this.renderOverlays();
     this.drawLayout();
@@ -411,6 +597,7 @@ export default class GameScene extends Phaser.Scene {
       this.buildHotspots();
     }
     this.renderOverlays();
+    if (this.arrowTarget && objectiveTarget(state) !== this.arrowTarget) this.clearArrow();
     if (pendingTalk(this.api) && !state.has('final_phase')) this.api.toast('tube', 'tube');
   }
 
@@ -431,15 +618,76 @@ export default class GameScene extends Phaser.Scene {
     this.tweens.add({ targets: this.flash, alpha: 0, delay: ms, duration: 160 });
   }
 
-  placeCharacter(textureKey) {
-    const { x, y, h } = ROOMS[state.room].char;
+  /** Puts the active character on the floor at their stored x in `pose`, breathing. */
+  placeCharacter(pose = 'idle') {
     this.tweens.killTweensOf(this.character);
-    this.character.setTexture(textureKey).setPosition(x, y);
-    // Poses share the idle pose's scale so the figure doesn't change size between them.
-    const scale = h / this.textures.get(state.active).getSourceImage().height;
-    this.character.setScale(scale);
-    this.tweens.add({ targets: this.character, scaleY: scale * 1.012, duration: 1800, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+    this.character.setPosition(this.charX, this.floor().y);
+    this.setPose(pose);
+    const s = this.character.scaleY;
+    this.tweens.add({ targets: this.character, scaleY: s * 1.012, duration: 1800, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+  }
+
+  /** Texture for a pose, or the idle pose when that art is missing (unless idle is a placeholder too). */
+  poseKey(pose, who = state.active) {
+    if (pose === 'idle') return who;
+    const key = `${who}_${pose}`;
+    const missing = this.registry.get('missing');
+    if (!this.textures.exists(key) || (missing.has(key) && !missing.has(who))) return who;
+    return key;
+  }
+
+  /**
+   * Walk and talk frames are scaled to the idle pose's on-screen height, since the cutouts
+   * trim differently; a crouch to CROUCH_H of it. Act art shares the idle framing and scale.
+   */
+  poseScale(key, pose) {
+    const { h } = ROOMS[state.room].char;
+    const idle = h / this.textures.get(state.active).getSourceImage().height;
+    if (key === state.active || pose === 'act') return idle;
+    return (h * (pose === 'crouch' ? CROUCH_H : 1)) / this.textures.get(key).getSourceImage().height;
+  }
+
+  /** Whether a pose's art must be mirrored to face the current direction. Idle is never flipped. */
+  flipFor(pose) {
+    if (this.poseKey(pose) === state.active) return false;
+    const faces = CHARACTERS[state.active].faces[pose.startsWith('walk') ? 'walk' : pose] ?? 0;
+    return faces !== 0 && faces !== this.facing[state.active];
+  }
+
+  setPose(pose) {
+    const key = this.poseKey(pose);
+    this.pose = pose;
+    this.character.setTexture(key).setScale(this.poseScale(key, pose)).setFlipX(this.flipFor(pose));
     this.applyWading(this.wadeTween ? this.wadeDepth : this.waterDepth());
+  }
+
+  /** Holds a pose for `ms` (or until changed), then returns to idle. */
+  strikePose(pose, ms) {
+    const who = state.active;
+    this.actTimer?.remove();
+    this.placeCharacter(pose);
+    if (!ms) return;
+    this.actTimer = this.time.delayedCall(ms, () => {
+      if (state.active === who && !this.moving && state.holding?.by !== who) this.placeCharacter('idle');
+    });
+  }
+
+  /** Crouch for low hotspots, reach for the rest; the holder keeps both hands on the rheostat. */
+  interactPose(hs) {
+    const pose = hs.y + hs.h / 2 > LOW_HOTSPOT_Y ? 'crouch' : 'act';
+    this.strikePose(pose, POSE_MS[pose]);
+  }
+
+  onHold() {
+    this.renderOverlays();
+    if (!this.playing || this.moving) return;
+    if (state.holding?.by === state.active) {
+      this.strikePose('act');
+      this.holdingPose = true;
+    } else if (this.holdingPose) {
+      this.holdingPose = false;
+      this.placeCharacter('idle');
+    }
   }
 
   waterDepth(room = state.room) {
@@ -473,21 +721,25 @@ export default class GameScene extends Phaser.Scene {
       this.rippleRing.setVisible(false);
       return;
     }
-    const { x, y, h } = ROOMS[state.room].char;
+    const { h } = ROOMS[state.room].char;
+    const { y } = this.floor();
+    const x = c.x;
     const scale = c.scaleX;
     const { width: fw, height: fh } = c.frame;
-    const cut = Math.max(0, fh - (h * depth) / scale);
+    // The waterline stays on the floor's frame of reference while the figure bobs and changes pose.
     const waterY = y - h * depth;
+    const cut = Phaser.Math.Clamp(fh - (c.y - waterY) / scale, 0, fh);
     c.setCrop(0, 0, fw, cut);
-    this.legs.setTexture(c.texture.key).setPosition(x, y).setScale(scale).setCrop(0, cut, fw, fh - cut).setVisible(true);
+    this.legs.setTexture(c.texture.key).setPosition(x, c.y).setScale(scale).setFlipX(c.flipX).setCrop(0, cut, fw, fh - cut).setVisible(true);
 
     if (this.ripple.visible) {
       this.ripple.setPosition(x, waterY);
       this.rippleRing.setPosition(x, waterY);
       return;
     }
-    // Sized from the idle pose so the ripple doesn't jump when the act pose swaps in.
-    const rw = Math.min(this.textures.get(state.active).getSourceImage().width * scale * 0.85, 190);
+    // Sized from the idle pose so the ripple doesn't jump when another pose swaps in.
+    const idleScale = h / this.textures.get(state.active).getSourceImage().height;
+    const rw = Math.min(this.textures.get(state.active).getSourceImage().width * idleScale * 0.85, 190);
     this.ripple
       .clear()
       .fillStyle(0xbfe3ea, 0.22)
@@ -512,18 +764,6 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
-  actPose() {
-    const who = state.active;
-    const actKey = `${who}_act`;
-    const missing = this.registry.get('missing');
-    if (!this.textures.exists(actKey) || (missing.has(actKey) && !missing.has(who))) return;
-    this.placeCharacter(actKey);
-    this.actTimer?.remove();
-    this.actTimer = this.time.delayedCall(700, () => {
-      if (state.active === who) this.placeCharacter(who);
-    });
-  }
-
   buildHotspots() {
     this.zones.forEach((z) => z.destroy());
     this.zones = [];
@@ -532,8 +772,14 @@ export default class GameScene extends Phaser.Scene {
       if (hs.visibleIf && !hs.visibleIf(state)) continue;
       const zone = this.add.zone(hs.x, hs.y, hs.w, hs.h).setOrigin(0).setInteractive({ useHandCursor: true });
       zone.hotspot = hs;
-      zone.on('pointerover', () => this.hover(hs));
-      zone.on('pointerout', () => this.clearHover());
+      zone.on('pointerover', () => {
+        this.hoverTarget = hs;
+        this.hover(hs);
+      });
+      zone.on('pointerout', () => {
+        this.hoverTarget = null;
+        this.clearHover();
+      });
       zone.on('pointerdown', (pointer) => {
         if (!pointer.rightButtonDown()) this.click(hs);
       });
@@ -572,18 +818,136 @@ export default class GameScene extends Phaser.Scene {
     this.hoverLabel.setVisible(false);
   }
 
+  /** Walks over to a hotspot, then uses it (with the item selected at click time, if any). */
   click(hs) {
     if (state.modal || this.busy || this.layoutMode) return;
     sfx.play('click');
-    this.ui.clearMessages();
+    if (this.arrowTarget === hs.id) this.clearArrow();
     const item = state.selected;
-    this.actPose();
+    const use = () => this.use(hs, item);
+    if (!this.canWalk()) return use();
+    this.walkTo(this.standX(hs), use, hs.x + hs.w / 2);
+  }
+
+  use(hs, item) {
+    if (state.modal || this.busy || !this.zones.some((z) => z.hotspot === hs)) return;
+    if (item && !state.holds(item)) item = null;
+    this.ui.clearMessages();
+    this.interactPose(hs);
     interact(this.api, hs, item);
     if (item) state.select(null);
     if (this.busy) return;
     this.buildHotspots();
     this.renderOverlays();
-    if (!state.modal && this.zones.some((z) => z.hotspot === hs)) this.hover(hs);
+    if (!state.modal && this.zones.some((z) => z.hotspot === hs) && this.hoverTarget === hs) this.hover(hs);
+  }
+
+  // ---------- helping new players: reveal, first-visit shimmer, the objective arrow ----------
+
+  /** Hold Space or Shift: outline and label everything clickable in the room. */
+  showReveal(on) {
+    if (on && (!this.playing || state.modal || this.busy || this.layoutMode)) return;
+    if (on === this.revealOn) return;
+    this.revealOn = on;
+    this.tweens.killTweensOf(this.revealLayer);
+    if (!on) {
+      this.tweens.add({ targets: this.revealLayer, alpha: 0, duration: 300 });
+      return;
+    }
+    state.markSeen('space_reveal');
+    this.revealLayer.removeAll(true);
+    const g = this.add.graphics();
+    this.revealLayer.add(g);
+    for (const { hotspot: hs } of this.zones) {
+      g.fillStyle(0xfff1c4, 0.08).fillRoundedRect(hs.x, hs.y, hs.w, hs.h, 12);
+      g.lineStyle(2, 0xfff1c4, 0.85).strokeRoundedRect(hs.x, hs.y, hs.w, hs.h, 12);
+      const label = this.add
+        .text(Phaser.Math.Clamp(hs.x + hs.w / 2, 90, WIDTH - 90), Math.max(hs.y + hs.h / 2, 92), hs.label, {
+          fontFamily: FONT,
+          fontSize: '17px',
+          color: COLORS.paperCss,
+          backgroundColor: 'rgba(7,11,16,0.78)',
+          padding: { x: 8, y: 3 },
+        })
+        .setOrigin(0.5);
+      this.revealLayer.add(label);
+    }
+    this.children.bringToTop(this.revealLayer);
+    this.tweens.add({ targets: this.revealLayer, alpha: 1, duration: 150 });
+  }
+
+  /** First visit to a room: hotspots shimmer once, and an arrow points at the objective's hotspot. */
+  introduceRoom() {
+    if (!this.playing || !state.markSeen(`visit_${state.room}`)) return;
+    this.zones.forEach(({ hotspot: hs }, i) => {
+      const g = this.add.graphics().setAlpha(0);
+      g.fillStyle(0xfff1c4, 0.1).fillRoundedRect(hs.x, hs.y, hs.w, hs.h, 12);
+      g.lineStyle(2, 0xfff1c4, 0.9).strokeRoundedRect(hs.x, hs.y, hs.w, hs.h, 12);
+      this.tweens.add({ targets: g, alpha: 1, duration: 280, delay: 250 + i * 140, hold: 120, yoyo: true, onComplete: () => g.destroy() });
+    });
+    const target = objectiveTarget(state);
+    if (target) this.time.delayedCall(450 + this.zones.length * 140, () => this.pointArrow(target));
+  }
+
+  pointArrow(id) {
+    this.clearArrow();
+    const hs = this.zones.find((z) => z.hotspot.id === id)?.hotspot;
+    if (!hs || state.has('final_phase')) return;
+    const below = hs.y < 110;
+    const g = this.add.graphics();
+    g.fillStyle(COLORS.amber, 1).fillTriangle(-15, -26, 15, -26, 0, 0);
+    g.lineStyle(2, 0x10161b, 0.85).strokeTriangle(-15, -26, 15, -26, 0, 0);
+    g.setPosition(hs.x + hs.w / 2, below ? hs.y + hs.h + 8 : hs.y - 6).setAngle(below ? 180 : 0);
+    this.tweens.add({ targets: g, y: g.y + (below ? 12 : -12), duration: 420, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+    this.arrow = g;
+    this.arrowTarget = id;
+  }
+
+  clearArrow() {
+    if (!this.arrow) return;
+    this.tweens.killTweensOf(this.arrow);
+    this.arrow.destroy();
+    this.arrow = null;
+    this.arrowTarget = null;
+  }
+
+  // ---------- cutscene beats ----------
+
+  /** Fades out, sleeps Game and UI under a CutsceneScene beat, and carries on where it left off. */
+  playBeat(id, onDone) {
+    const missing = this.registry.get('missing');
+    const real = (k) => k && this.textures.exists(k) && !missing.has(k);
+    const shots = BEATS[id];
+    if (!shots?.some((s) => real(s.image) || real(s.fallback))) return onDone?.();
+    const wasBusy = this.busy;
+    const wasModal = state.modal;
+    this.busy = true;
+    state.modal = true;
+    this.cancelWalk();
+    this.clearHover();
+    this.showReveal(false);
+    const cam = this.cameras.main;
+    cam.fadeOut(450, 0, 0, 0);
+    cam.once('camerafadeoutcomplete', () => {
+      this.beatDone = () => {
+        this.busy = wasBusy;
+        state.modal = wasModal;
+        onDone?.();
+      };
+      this.scene.launch('Cutscene', { shots, mode: 'beat' });
+      this.scene.sleep('UI');
+      this.scene.sleep();
+    });
+  }
+
+  onWake() {
+    // Keys released while asleep never sent their keyup here.
+    this.input.keyboard.resetKeys();
+    state.noteInput();
+    this.cameras.main.fadeIn(600);
+    const done = this.beatDone;
+    this.beatDone = null;
+    done?.();
   }
 
   // ---------- swapping, sending, state changes ----------
@@ -593,7 +957,9 @@ export default class GameScene extends Phaser.Scene {
     this.busy = true;
     state.markSeen('swapped');
     sfx.play('swap');
+    this.cancelWalk();
     this.clearHover();
+    this.showReveal(false);
     const cam = this.cameras.main;
     cam.fadeOut(220, 0, 0, 0);
     cam.once('camerafadeoutcomplete', () => {
@@ -604,6 +970,7 @@ export default class GameScene extends Phaser.Scene {
       this.ui.clearMessages();
       this.ui.hideToast();
       this.announceArrivals(arrived, combined, reactions);
+      this.introduceRoom();
     });
   }
 
@@ -669,7 +1036,7 @@ export default class GameScene extends Phaser.Scene {
       this.time.delayedCall(t, () => this.flashWindow(ms, 0xd8f0ff));
       t += ms + 380;
     }
-    this.time.delayedCall(t + 300, () => {
+    const card = () => {
       sfx.play('win');
       this.ui.endingCard(endingCard(state, id), () => {
         this.ui.blackCard(TWIST_CARD, () => {
@@ -677,7 +1044,8 @@ export default class GameScene extends Phaser.Scene {
           onDone();
         });
       });
-    });
+    };
+    this.time.delayedCall(t + 300, () => (ENDINGS[id]?.beat ? this.playBeat(ENDINGS[id].beat, card) : card()));
   }
 
   endGame(id) {
@@ -690,12 +1058,13 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
-  // ---------- layout tool (D on localhost or with ?debug) ----------
+  // ---------- layout tool (L on localhost or with ?debug) ----------
 
   toggleLayoutMode() {
     if (!this.layoutAllowed || state.modal) return;
     this.layoutMode = !this.layoutMode;
     this.layoutText.setVisible(this.layoutMode);
+    this.cancelWalk();
     this.clearHover();
     this.drawLayout();
     this.updateLayoutText(this.input.activePointer);
@@ -718,8 +1087,11 @@ export default class GameScene extends Phaser.Scene {
         }),
       );
     }
-    const { x, y, h } = ROOMS[state.room].char;
+    const { h } = ROOMS[state.room].char;
+    const { minX, maxX, y } = this.floor();
+    const x = this.charX;
     this.layoutGfx.lineStyle(2, 0xff6b6b, 1).strokeRect(x - 4, y - h, 8, h).lineBetween(x - 30, y, x + 30, y);
+    this.layoutGfx.lineStyle(2, 0xffd166, 0.9).lineBetween(minX, y, maxX, y).strokeRect(minX - 3, y - 12, 6, 24).strokeRect(maxX - 3, y - 12, 6, 24);
   }
 
   updateLayoutText(pointer, extra = '') {
@@ -727,7 +1099,7 @@ export default class GameScene extends Phaser.Scene {
     const x = Math.round(pointer.x);
     const y = Math.round(pointer.y);
     this.layoutText.setText(
-      [`LAYOUT MODE (D to exit)  pointer ${x}, ${y}`, 'drag: measure a hotspot   shift-click: place character', this.lastMeasure ?? '', extra]
+      [`LAYOUT MODE (L to exit)  pointer ${x}, ${y}`, 'drag: measure a hotspot   shift-click: place character (sets the feet line)', this.lastMeasure ?? '', extra]
         .filter(Boolean)
         .join('\n'),
     );
@@ -739,12 +1111,13 @@ export default class GameScene extends Phaser.Scene {
     this.input.on('pointerdown', (p) => {
       if (!this.layoutMode) return;
       if (p.event.shiftKey) {
-        const char = ROOMS[state.room].char;
+        const { char, floor } = ROOMS[state.room];
         char.x = Math.round(p.x);
-        char.y = Math.round(p.y);
-        this.placeCharacter(state.active);
+        char.y = floor.y = Math.round(p.y);
+        this.pos[state.active] = Phaser.Math.Clamp(char.x, floor.minX, floor.maxX);
+        this.placeCharacter('idle');
         this.drawLayout();
-        this.lastMeasure = `${state.room}.char: { x: ${char.x}, y: ${char.y}, h: ${char.h} }`;
+        this.lastMeasure = `${state.room}.char: { x: ${char.x}, y: ${char.y}, h: ${char.h} }  floor: { minX: ${floor.minX}, maxX: ${floor.maxX}, y: ${floor.y} }`;
         console.log(this.lastMeasure);
         this.updateLayoutText(p);
         return;

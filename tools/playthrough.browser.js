@@ -10,8 +10,9 @@
 //   board     column id to pin the suspicious cards on at the end ('tobin', 'mara', 'crane', 'triangle'), or null
 //   pause     checkpoint names to stop at (e.g. ['lens', 'valves', 'morse']). At each one the run sets
 //             window.__checkpoint and waits until window.__resume = true, so a screenshot can be taken.
-// Checkpoints: tubeChoice, lensSooty, lens, plate, valves, lightning, dim, hold, morse, ending, projection,
-//              twist, board, finalLine, final, epilogue.
+// Checkpoints: howto, closeup, tubeChoice, lensSooty, lens, plate, valves, lightning, dim, hold, lamplit, morse,
+//              arrest, ending, projection, twist, board, finalLine, final, epilogue.
+// The characters teleport instead of walking (window.__fastWalk), so timings don't depend on distance.
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -19,6 +20,7 @@ export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie
   const game = window.__game;
   const S = window.__state;
   const canvas = document.querySelector('canvas');
+  window.__fastWalk = true;
   const { ROOMS } = await import('/src/data/rooms.js');
   const { VALVE_COLORS, VALVE_ORDER, MORSE } = await import('/src/data/puzzles.js');
   const { COLUMNS, EPILOGUES } = await import('/src/data/board.js');
@@ -76,11 +78,39 @@ export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie
   };
   const modalKind = () => ui().modal?.kind ?? null;
 
+  let closeupShot = false;
+  const closeCloseup = async () => {
+    if (modalKind() !== 'closeup') return;
+    await sleep(250);
+    if (!closeupShot) {
+      closeupShot = true;
+      await checkpoint('closeup');
+    }
+    key('Enter');
+    step('closed close-up');
+    await sleep(300);
+  };
+  /** Waits for a cutscene beat and skips it with Esc; carries on if the beat was skipped for missing art. */
+  const skipBeat = async (name) => {
+    const t0 = performance.now();
+    while (!scenes().includes('Cutscene') && performance.now() - t0 < 8000) await sleep(100);
+    if (!scenes().includes('Cutscene')) return step(`no ${name} beat`);
+    expect(!scenes().includes('Game') && !scenes().includes('UI'), 'Game and UI sleep under a beat');
+    await sleep(1800);
+    await checkpoint(name);
+    key('Escape');
+    await waitFor(() => scenes().includes('Game') && scenes().includes('UI') && !scenes().includes('Cutscene'), `back from ${name}`);
+    step(`${name} beat`);
+    await sleep(700);
+  };
+
   const hotspot = async (id) => {
+    await closeCloseup();
     await waitFor(() => !S.modal && !gs().busy, `idle before ${id}`);
     click(...center(id));
     step(id);
     await sleep(450);
+    await closeCloseup();
   };
   const swap = async () => {
     await waitFor(() => !S.modal && !gs().busy, 'idle before swap');
@@ -113,6 +143,8 @@ export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie
     await sleep(350);
   };
   const button = async (label) => {
+    await waitFor(() => modalKind() === 'closeup' || ui().modal?.list.some((o) => o.text?.startsWith(label)), `modal with "${label}"`);
+    await closeCloseup();
     await waitFor(() => ui().modal?.list.some((o) => o.text?.startsWith(label) && o.input?.enabled), `button "${label}"`);
     await clickObj(ui().modal.list.find((o) => o.text?.startsWith(label) && o.input?.enabled), label);
   };
@@ -156,7 +188,15 @@ export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie
     await sleep(300);
     key('Escape');
   }
-  await waitFor(() => scenes().includes('Game') && gs().playing && !S.modal, 'game started');
+  await waitFor(() => scenes().includes('Game') && gs().playing, 'game started');
+  await sleep(300);
+  if (modalKind() === 'howto') {
+    await sleep(400);
+    await checkpoint('howto');
+    key('Enter');
+    step('closed how-to card');
+  }
+  await waitFor(() => !S.modal, 'how-to card closed');
 
   // Investigation
   await as('mara');
@@ -291,7 +331,8 @@ export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie
   expect(S.holding, 'still holding after the swap');
   await hotspot('lamp');
   expect(S.has('lamp_full'), 'lamp full');
-  await sleep(600);
+  await skipBeat('lamplit');
+  expect(S.has('lamp_full') && !S.holding, 'the beat returns to the same game');
   await swap();
   if (truth) {
     await sleep(700);
@@ -320,6 +361,7 @@ export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie
       await sleep(160);
     }
   }
+  if (truth) await skipBeat('arrest');
   await waitFor(() => modalKind() === 'ending', 'ending card', 20000);
   await sleep(3500);
   await checkpoint('ending');

@@ -6,11 +6,14 @@
 import assert from 'node:assert/strict';
 import { GameState } from '../src/systems/State.js';
 import { createApi, interact, pendingTalk } from '../src/systems/Interact.js';
-import { nextHint, useHint } from '../src/systems/Hints.js';
+import { readFileSync } from 'node:fs';
+import { nextHint, objective, objectiveTarget, useHint } from '../src/systems/Hints.js';
 import { ROOMS } from '../src/data/rooms.js';
 import { VALVE_COLORS, VALVE_ORDER, LENS_PANELS, HOLD_MS, lightningStrike, lightningPending } from '../src/data/puzzles.js';
-import { HINTS, endingCard, FINAL_LINES, finalLine, HOLD_TEXT, BARKS, CROSS_ROOM, TALKS, TRUST_WARM } from '../src/data/text.js';
+import { HINTS, endingCard, FINAL_LINES, finalLine, HOLD_TEXT, BARKS, CROSS_ROOM, TALKS, TRUST_WARM, CLOSEUPS, ENDINGS, HOW_TO } from '../src/data/text.js';
 import { CARDS, COLUMNS, REACTIONS, boardVerdict, epilogueLine, EPILOGUES } from '../src/data/board.js';
+import { BEATS } from '../src/data/cutscenes.js';
+import { CLOSEUP_IMAGES, CUTSCENE_IMAGES } from '../src/data/assets.js';
 import { TIDE_MAX, TIDE_STEP_MS } from '../src/config.js';
 
 const verbose = process.argv.includes('--verbose');
@@ -22,8 +25,15 @@ function makeGame({ policy = 'lie' } = {}) {
   const talks = [];
   const choices = [];
   const pending = {};
+  const closeups = [];
+  const cutscenes = [];
+  const objectives = [];
   let ending = null;
   let finalEnd = null;
+  const sample = () => {
+    const step = HINTS.findIndex((h) => !h.done(state));
+    objectives.push({ step, mara: objective(state, 'mara'), tobin: objective(state, 'tobin') });
+  };
 
   const pick = (choice) => {
     const kind = typeof policy === 'string' ? policy : policy[choice.choice] ?? 'lie';
@@ -52,6 +62,14 @@ function makeGame({ policy = 'lie' } = {}) {
     lens: open('lens'),
     valves: open('valves'),
     morse: open('morse'),
+    closeup: (id, then) => {
+      closeups.push(id);
+      then?.();
+    },
+    cutscene: (id, then) => {
+      cutscenes.push(id);
+      then?.();
+    },
     talk: (lines, onDone, onChoose) => {
       const out = [];
       const queue = [...lines];
@@ -102,6 +120,9 @@ function makeGame({ policy = 'lie' } = {}) {
     talks,
     choices,
     pending,
+    closeups,
+    cutscenes,
+    objectives,
     get ending() {
       return ending;
     },
@@ -113,6 +134,7 @@ function makeGame({ policy = 'lie' } = {}) {
       if (item) assert.ok(state.holds(item), `${state.active} should hold ${item} to use it on ${id}`);
       if (verbose) console.log(`  ${state.active} -> ${id}${item ? ` with ${item}` : ''}`);
       interact(api, find(id), item);
+      sample();
     },
     as(who) {
       return state.setActive(who);
@@ -120,6 +142,7 @@ function makeGame({ policy = 'lie' } = {}) {
     enter(code) {
       const k = take('keypad');
       if (code === k.code) k.onSuccess();
+      sample();
       return code === k.code;
     },
     choose(index) {
@@ -127,6 +150,7 @@ function makeGame({ policy = 'lie' } = {}) {
       const opt = c.options[index];
       assert.ok(opt.enabled, `option "${opt.label}" is disabled`);
       opt.onSelect();
+      sample();
     },
     take,
     visible,
@@ -681,6 +705,79 @@ function fullRun({ truth = true, actor = 'tobin', ...opts } = {}) {
   const t1 = g.tube();
   assert.ok(t1.some(([, t]) => t.includes('over my boots')));
   console.log('ok  talks gain urgency from tide 4');
+}
+
+// ---- objectives: always present, short, and moving with the story on every branch ----
+{
+  const runs = [
+    { truth: true, actor: 'tobin', policy: 'lie', hideLetter: false, hideEnvelope: true },
+    { truth: false, actor: 'mara', policy: 'clean', hideLetter: true, hideEnvelope: false, wrongValves: 2 },
+    { truth: true, actor: 'mara', policy: 'deflect', slips: 1 },
+    { truth: false, actor: 'tobin', policy: 'lie', slips: 2 },
+  ];
+  for (const opts of runs) {
+    const { g } = fullRun(opts);
+    const label = `${opts.truth ? 'CRANE' : 'SOS'}/${opts.policy}`;
+    const live = g.objectives.filter((o) => o.step >= 0);
+    assert.ok(live.length > 20, `${label}: objectives sampled through the run`);
+    for (const o of live) {
+      for (const who of ['mara', 'tobin']) {
+        assert.equal(typeof o[who], 'string', `${label} step ${o.step}: ${who} has an objective`);
+        assert.ok(o[who].length >= 8 && o[who].length <= 44, `${label} step ${o.step}: "${o[who]}" fits the top bar`);
+      }
+    }
+    for (let i = 1; i < live.length; i++) {
+      const [a, b] = [live[i - 1], live[i]];
+      if (a.step !== b.step) assert.ok(a.mara !== b.mara || a.tobin !== b.tobin, `${label}: objective changes from step ${a.step} to ${b.step}`);
+    }
+    assert.ok(new Set(live.map((o) => o.step)).size >= 12, `${label}: objectives seen across the ladder`);
+    assert.equal(objective(g.state), null, `${label}: no objective once the story is done`);
+    assert.deepEqual(g.cutscenes, ['lamplit'], `${label}: the lamp-lit beat plays once`);
+    for (const id of ['logbook', 'chalk', 'letter', 'bootprints', 'ledger']) assert.ok(g.closeups.includes(id), `${label}: ${id} close-up shown`);
+  }
+
+  const g = makeGame();
+  assert.equal(objective(g.state, 'mara'), 'Read Elias\'s logbook on the desk');
+  assert.equal(objectiveTarget(g.state, 'mara'), 'logbook');
+  assert.equal(objectiveTarget(g.state, 'tobin'), 'chalk');
+  for (const step of HINTS) {
+    assert.ok(step.objective?.mara && step.objective?.tobin, 'every hint step has an objective for both');
+    for (const [who, id] of Object.entries(step.target ?? {})) {
+      const room = who === 'mara' ? 'lamp' : 'cellar';
+      assert.ok(ROOMS[room].hotspots.some((h) => h.id === id), `arrow target ${id} is in ${room}`);
+    }
+  }
+  console.log(`ok  objectives exist for both leads at every step and change as the story moves (${runs.length} branches)`);
+}
+
+// ---- close-ups, beats and the how-to card ----
+{
+  for (const [id, c] of Object.entries(CLOSEUPS)) {
+    assert.ok(CLOSEUP_IMAGES[c.image], `close-up ${id} has a registered image`);
+    assert.ok(c.title && Array.isArray(c.lines), `close-up ${id} is complete`);
+    assert.ok(c.lines.length || c.caption, `close-up ${id} shows some writing`);
+    if (c.lines.length) assert.ok(c.area && c.ink && c.size, `close-up ${id} says where and how to write`);
+  }
+  for (const [id, shots] of Object.entries(BEATS)) {
+    for (const shot of shots) {
+      assert.ok(CUTSCENE_IMAGES[shot.image], `beat ${id} still is registered`);
+      assert.ok(shot.captions.length >= 1 && shot.captions.length <= 3, `beat ${id} has 1-3 captions`);
+    }
+  }
+  for (const e of Object.values(ENDINGS)) if (e.beat) assert.ok(BEATS[e.beat], `ending beat ${e.beat} exists`);
+  assert.ok(HOW_TO.length >= 5 && HOW_TO.length <= 6 && HOW_TO.every((r) => r.icon && r.text), 'how-to card has 5-6 illustrated rows');
+
+  const g = makeGame();
+  g.state.markSeen('howto');
+  g.state.markSeen('swapped');
+  g.state.reset();
+  assert.ok(g.state.seen.has('howto') && !g.state.seen.has('swapped'), 'replays remember the how-to card only');
+
+  for (const file of ['src/data/puzzles.js', 'src/systems/Interact.js', 'src/systems/State.js', 'src/systems/Hints.js']) {
+    const src = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+    assert.doesNotMatch(src, /walkTo|charX|fastWalk|\bPhaser\.|from ['"]phaser/, `${file} never depends on walking or Phaser`);
+  }
+  console.log('ok  close-ups, beats and the how-to card are complete; story logic never depends on walking');
 }
 
 // ---- hints ----

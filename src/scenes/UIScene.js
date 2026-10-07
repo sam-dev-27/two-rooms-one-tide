@@ -2,12 +2,16 @@ import { WIDTH, HEIGHT, FONT, COLORS, TIDE_MAX } from '../config.js';
 import { CHARACTERS, ROOMS } from '../data/rooms.js';
 import { ITEMS } from '../data/items.js';
 import { CARDS, COLUMNS } from '../data/board.js';
-import { CARD_TOAST, CHOICE_LABELS, HOLD_TEXT, TUTORIAL, trustLabel } from '../data/text.js';
+import { CARD_TOAST, CHOICE_LABELS, CLOSEUPS, HOLD_TEXT, HOW_TO, REVEAL_TIP, TRUST_WARM, TUTORIAL, trustLabel } from '../data/text.js';
 import { state } from '../systems/State.js';
-import { isStuck, useHint } from '../systems/Hints.js';
+import { isStuck, objective, useHint } from '../systems/Hints.js';
 import { sfx } from '../systems/Sfx.js';
 
 const BAR_H = 84;
+const TOP_H = 70;
+const TOP_ROW = 22;
+const OBJ_ROW = 53;
+const REVEAL_TIP_MS = 240_000;
 const SLOT = 64;
 const SLOT_GAP = 12;
 const SLOT_COUNT = 8;
@@ -53,6 +57,8 @@ export default class UIScene extends Phaser.Scene {
     kb.on('keydown-C', () => this.toggleCase('board'));
     kb.on('keydown-M', () => this.toggleMute());
     kb.on('keydown-ESC', () => (this.modal?.closable ? this.closeModal() : state.select(null)));
+    kb.addCapture('F1');
+    kb.on('keydown', (e) => (e.key === '?' || e.key === 'F1') && this.toggleHowTo());
     this.input.on('pointerdown', (p) => p.rightButtonDown() && state.select(null));
 
     state.on('inventory', this.refresh, this);
@@ -72,6 +78,7 @@ export default class UIScene extends Phaser.Scene {
     if (carrying) this.cursorIcon.setPosition(p.x + 26, p.y + 26);
 
     this.drawHold();
+    this.updateObjective();
 
     const stuck = isStuck(state);
     if (stuck && !this.pulse) {
@@ -101,23 +108,47 @@ export default class UIScene extends Phaser.Scene {
   }
 
   createTopBar() {
-    this.add.rectangle(0, 0, WIDTH, 56, COLORS.ink, 0.6).setOrigin(0);
-    this.whoText = this.add.text(24, 28, '', { fontFamily: FONT, fontSize: '24px', color: COLORS.paperCss }).setOrigin(0, 0.5);
+    // Interactive so clicks on the bar never walk the character or reach hotspots behind it.
+    this.add.rectangle(0, 0, WIDTH, TOP_H, COLORS.ink, 0.62).setOrigin(0).setInteractive();
+    this.whoText = this.add.text(24, TOP_ROW, '', { fontFamily: FONT, fontSize: '21px', color: COLORS.paperCss }).setOrigin(0, 0.5);
     this.tideGfx = this.add.graphics();
-    this.tideLabel = this.add.text(0, 28, '', { fontFamily: FONT, fontSize: '16px', color: COLORS.mutedCss }).setOrigin(0, 0.5);
-    this.swapBtn = this.makeButton(0, 28, '', () => state.emit('request-swap'));
-    this.hintBtn = this.makeButton(0, 28, 'Hint (H)', () => this.showHint());
-    this.caseBtn = this.makeButton(0, 28, 'Case (C)', () => this.toggleCase('board'));
-    this.muteBtn = this.makeButton(0, 28, sfx.muted ? 'Sound off' : 'Sound on', () => this.toggleMute());
+    this.tideLabel = this.add.text(0, TOP_ROW, '', { fontFamily: FONT, fontSize: '15px', color: COLORS.mutedCss }).setOrigin(0, 0.5);
+    this.objText = this.add.text(24, OBJ_ROW, '', { fontFamily: FONT, fontSize: '17px', color: COLORS.amberCss }).setOrigin(0, 0.5);
+    this.revealTip = this.add
+      .text(WIDTH - 16, OBJ_ROW, REVEAL_TIP, { fontFamily: FONT, fontSize: '15px', fontStyle: 'italic', color: COLORS.mutedCss })
+      .setOrigin(1, 0.5)
+      .setVisible(false);
+    this.objective = null;
+    this.swapBtn = this.makeButton(0, TOP_ROW, '', () => state.emit('request-swap'), '17px');
+    this.hintBtn = this.makeButton(0, TOP_ROW, 'Hint (H)', () => this.showHint(), '17px');
+    this.caseBtn = this.makeButton(0, TOP_ROW, 'Case (C)', () => this.toggleCase('board'), '17px');
+    this.muteBtn = this.makeButton(0, TOP_ROW, sfx.muted ? 'Sound off' : 'Sound on', () => this.toggleMute(), '17px');
+    this.helpBtn = this.makeButton(0, TOP_ROW, '?', () => this.toggleHowTo(), '17px');
     this.layoutTopButtons();
   }
 
   layoutTopButtons() {
     let x = WIDTH - 16;
-    for (const btn of [this.muteBtn, this.caseBtn, this.hintBtn, this.swapBtn]) {
+    for (const btn of [this.helpBtn, this.muteBtn, this.caseBtn, this.hintBtn, this.swapBtn]) {
       btn.setOrigin(1, 0.5).setX(x);
-      x -= btn.width + 10;
+      x -= btn.width + 8;
     }
+  }
+
+  /** The active character's goal under their name; it pulses when it changes. */
+  updateObjective() {
+    const tip = !state.seen.has('space_reveal') && Date.now() - state.startedAt < REVEAL_TIP_MS;
+    if (this.revealTip.visible !== tip) this.revealTip.setVisible(tip);
+    const text = objective(state);
+    const key = `${state.active}:${text}`;
+    if (key === this.objective) return;
+    const changed = this.objective !== null && this.objective.startsWith(state.active) && text;
+    this.objective = key;
+    this.objText.setText(text ? `Objective: ${text}` : '');
+    if (!changed) return;
+    this.tweens.killTweensOf(this.objText);
+    this.objText.setScale(1).setColor('#fff6dc');
+    this.tweens.add({ targets: this.objText, scale: 1.08, duration: 220, yoyo: true, repeat: 2, ease: 'Sine.InOut', onComplete: () => this.objText.setColor(COLORS.amberCss) });
   }
 
   createInventory() {
@@ -186,9 +217,9 @@ export default class UIScene extends Phaser.Scene {
 
   /** Small brass gauge beside the character name: tide 0..6. */
   drawTide() {
-    const x = this.whoText.x + this.whoText.width + 44;
-    const y = 28;
-    const r = 16;
+    const x = this.whoText.x + this.whoText.width + 34;
+    const y = TOP_ROW;
+    const r = 13;
     const angle = (i) => Phaser.Math.DegToRad(150 + (i * 240) / TIDE_MAX);
     const g = this.tideGfx.clear();
     g.fillStyle(0x241c12, 1).fillCircle(x, y, r + 4);
@@ -196,7 +227,7 @@ export default class UIScene extends Phaser.Scene {
     for (let i = 0; i <= TIDE_MAX; i++) {
       const a = angle(i);
       g.lineStyle(2, i <= state.tide ? 0x6fb7d0 : 0x5a5040, 1);
-      g.lineBetween(x + Math.cos(a) * (r - 6), y + Math.sin(a) * (r - 6), x + Math.cos(a) * (r - 1), y + Math.sin(a) * (r - 1));
+      g.lineBetween(x + Math.cos(a) * (r - 5), y + Math.sin(a) * (r - 5), x + Math.cos(a) * (r - 1), y + Math.sin(a) * (r - 1));
     }
     const a = angle(state.tide);
     g.lineStyle(2, 0xe0786f, 1).lineBetween(x, y, x + Math.cos(a) * (r - 3), y + Math.sin(a) * (r - 3));
@@ -220,10 +251,28 @@ export default class UIScene extends Phaser.Scene {
     if (!this.showing) this.nextMessage();
   }
 
+  /** A close-up hides the message box; the line it interrupted is shown again afterwards. */
+  holdMessages() {
+    if (this.showing && !this.msgHeld && this.msgCurrent) this.queue.unshift(this.msgCurrent);
+    this.msgTimer?.remove();
+    this.tweens.killTweensOf(this.msg);
+    this.msg.setAlpha(0);
+    this.showing = true;
+    this.msgHeld = true;
+  }
+
+  releaseMessages() {
+    if (!this.msgHeld) return;
+    this.msgHeld = false;
+    this.showing = false;
+    this.nextMessage();
+  }
+
   clearMessages() {
     this.queue = [];
     this.msgTimer?.remove();
     this.showing = false;
+    this.msgHeld = false;
     this.tweens.killTweensOf(this.msg);
     this.msg.setAlpha(0);
   }
@@ -231,6 +280,7 @@ export default class UIScene extends Phaser.Scene {
   nextMessage() {
     this.msgTimer?.remove();
     const text = this.queue.shift();
+    this.msgCurrent = text;
     if (text === undefined) {
       this.showing = false;
       this.tweens.add({ targets: this.msg, alpha: 0, duration: 400 });
@@ -251,7 +301,7 @@ export default class UIScene extends Phaser.Scene {
 
   createToast() {
     this.toastText = this.add
-      .text(WIDTH / 2, 76, '', {
+      .text(WIDTH / 2, TOP_H + 18, '', {
         fontFamily: FONT,
         fontSize: '19px',
         color: '#10161b',
@@ -265,7 +315,7 @@ export default class UIScene extends Phaser.Scene {
       .setDepth(60);
     // Case-board arrivals get their own small toast at the left, so they never fight the tips.
     this.cardToast = this.add
-      .text(16, 64, '', {
+      .text(16, TOP_H + 8, '', {
         fontFamily: FONT,
         fontSize: '15px',
         color: COLORS.paperCss,
@@ -287,11 +337,11 @@ export default class UIScene extends Phaser.Scene {
     this.toastBusy = true;
     this.toastCurrent = text;
     this.tweens.killTweensOf(this.toastText);
-    this.toastText.setText(text).setAlpha(0).setY(62);
+    this.toastText.setText(text).setAlpha(0).setY(TOP_H + 4);
     this.tweens.chain({
       targets: this.toastText,
       tweens: [
-        { alpha: 1, y: 76, duration: 260, ease: 'Cubic.Out' },
+        { alpha: 1, y: TOP_H + 18, duration: 260, ease: 'Cubic.Out' },
         { alpha: 0, duration: 400, delay: this.toastQueue.length ? 4200 : 6500 },
       ],
       onComplete: () => this.nextToast(),
@@ -338,7 +388,7 @@ export default class UIScene extends Phaser.Scene {
   createHoldIndicator() {
     this.holdRing = this.add.graphics().setDepth(55);
     this.holdText = this.add
-      .text(WIDTH - 16, 64, '', { fontFamily: FONT, fontSize: '16px', color: '#10161b', backgroundColor: COLORS.amberCss, padding: { x: 12, y: 6 } })
+      .text(WIDTH - 16, TOP_H + 8, '', { fontFamily: FONT, fontSize: '16px', color: '#10161b', backgroundColor: COLORS.amberCss, padding: { x: 12, y: 6 } })
       .setOrigin(1, 0)
       .setVisible(false)
       .setDepth(55);
@@ -456,25 +506,201 @@ export default class UIScene extends Phaser.Scene {
     return this.add.text(WIDTH / 2, y, text, { fontFamily: FONT, fontSize: '32px', color: COLORS.amberCss }).setOrigin(0.5, 0);
   }
 
-  choice({ title, text, options, closable = true }) {
-    const body = this.bodyText(text, 640);
-    const c = this.openModal(760, body.height + 130 + options.length * 62, { closable });
-    const { y } = c.box;
+  choice({ title, text, options, closable = true, who = null, worried = false }) {
+    const dx = who ? 70 : 0;
+    const body = this.bodyText(text, 640).setX(WIDTH / 2 + dx);
+    const c = this.openModal(760 + dx * 2, Math.max(body.height + 130 + options.length * 62, who ? 220 : 0), { closable });
+    const { x, y } = c.box;
     body.setY(y + 88);
-    c.add([this.titleText(title, y + 30), body]);
+    c.add([this.titleText(title, y + 30).setX(WIDTH / 2 + dx), body]);
+    if (who) {
+      const face = this.add.image(x + 90, y + 100, this.portrait(who, { worried })).setDisplaySize(124, 124);
+      const ring = this.add.graphics().lineStyle(4, CHARACTERS[who].color, 1).strokeRect(x + 28, y + 38, 124, 124);
+      c.add([face, ring]);
+    }
     options.forEach((opt, i) => {
       const oy = y + 120 + body.height + i * 62;
       if (opt.enabled) {
-        c.add(this.makeButton(WIDTH / 2, oy, opt.label, () => {
+        c.add(this.makeButton(WIDTH / 2 + dx, oy, opt.label, () => {
           this.closeModal();
           opt.onSelect();
         }, '20px').setOrigin(0.5, 0));
       } else {
-        c.add(this.add.text(WIDTH / 2, oy, `${opt.label}  (${opt.lockedLabel ?? 'no proof'})`, {
+        c.add(this.add.text(WIDTH / 2 + dx, oy, `${opt.label}  (${opt.lockedLabel ?? 'no proof'})`, {
           fontFamily: FONT, fontSize: '20px', color: '#5d6b76', backgroundColor: '#141c24', padding: { x: 14, y: 7 },
         }).setOrigin(0.5, 0));
       }
     });
+  }
+
+  /** Calls `fn` after the modal has gone, so it may open the next modal safely. */
+  afterClose(c, fn) {
+    const prev = c.onClose;
+    c.onClose = () => {
+      prev?.();
+      if (fn) this.time.delayedCall(0, fn);
+    };
+  }
+
+  /** Click, Enter or Space anywhere closes the modal, but not with the click that opened it. */
+  closeOnAnyInput(c) {
+    const opened = this.time.now;
+    const close = () => this.time.now - opened > 200 && this.modal === c && this.closeModal();
+    c.list[0].setInteractive({ useHandCursor: true }).on('pointerdown', close);
+    this.onKeys(c, { down: (e) => (e.key === 'Enter' || e.code === 'Space') && close() });
+  }
+
+  // ---------- how to play ----------
+
+  howTo(onClose) {
+    const rowH = 72;
+    const c = this.openModal(880, 170 + HOW_TO.length * rowH, { kind: 'howto' });
+    const { x, y, w, h } = c.box;
+    c.add(this.titleText('How to play', y + 24));
+    HOW_TO.forEach((row, i) => {
+      const cy = y + 112 + i * rowH;
+      const icon = this.add.graphics();
+      this.drawIcon(icon, row.icon, x + 72, cy);
+      const text = this.add
+        .text(x + 128, cy, row.text, { fontFamily: FONT, fontSize: '19px', color: COLORS.paperCss, wordWrap: { width: w - 168 }, lineSpacing: 3 })
+        .setOrigin(0, 0.5);
+      c.add([icon, text]);
+    });
+    c.add(
+      this.add
+        .text(WIDTH / 2, y + h - 34, 'Click or press Enter to begin   ·   ? or F1 shows this again', {
+          fontFamily: FONT,
+          fontSize: '16px',
+          fontStyle: 'italic',
+          color: COLORS.amberCss,
+        })
+        .setOrigin(0.5),
+    );
+    state.markSeen('howto');
+    this.closeOnAnyInput(c);
+    this.afterClose(c, onClose);
+  }
+
+  toggleHowTo() {
+    if (this.modal?.kind === 'howto') return this.closeModal();
+    if (this.modal || !this.scene.isActive('Game')) return;
+    sfx.play('click');
+    this.howTo();
+  }
+
+  /** Small line drawings for the how-to rows, centred on (cx, cy), about 52px across. */
+  drawIcon(g, icon, cx, cy) {
+    const amber = COLORS.amber;
+    const paper = 0xf3e6c8;
+    g.lineStyle(3, amber, 1);
+    if (icon === 'click') {
+      g.fillStyle(paper, 1).fillTriangle(cx - 10, cy - 18, cx - 10, cy + 12, cx + 10, cy + 4);
+      g.lineBetween(cx - 2, cy + 6, cx + 6, cy + 20);
+      g.beginPath().arc(cx - 10, cy - 18, 14, -2.6, -0.4).strokePath();
+      g.beginPath().arc(cx - 10, cy - 18, 22, -2.4, -0.6).strokePath();
+    } else if (icon === 'walk') {
+      g.fillStyle(paper, 1).fillEllipse(cx - 14, cy + 8, 12, 22).fillEllipse(cx + 2, cy - 8, 12, 22);
+      g.lineBetween(cx - 24, cy + 24, cx + 22, cy + 24).lineBetween(cx + 22, cy + 24, cx + 14, cy + 18).lineBetween(cx + 22, cy + 24, cx + 14, cy + 30);
+    } else if (icon === 'swap') {
+      g.beginPath().arc(cx, cy, 18, Math.PI * 1.05, Math.PI * 1.95).strokePath();
+      g.beginPath().arc(cx, cy, 18, Math.PI * 0.05, Math.PI * 0.95).strokePath();
+      g.fillStyle(amber, 1).fillTriangle(cx + 18, cy - 10, cx + 12, cy - 2, cx + 24, cy - 2).fillTriangle(cx - 18, cy + 10, cx - 24, cy + 2, cx - 12, cy + 2);
+      g.fillStyle(0xe3a46a, 1).fillCircle(cx, cy - 4, 4);
+      g.fillStyle(0x78a8c8, 1).fillCircle(cx, cy + 6, 4);
+    } else if (icon === 'hatch') {
+      g.lineStyle(3, paper, 1).strokeRect(cx - 18, cy - 20, 36, 40);
+      g.lineStyle(3, amber, 1).lineBetween(cx - 6, cy + 12, cx - 6, cy - 12).lineBetween(cx + 6, cy - 12, cx + 6, cy + 12);
+      g.fillStyle(amber, 1).fillTriangle(cx - 6, cy - 16, cx - 11, cy - 8, cx - 1, cy - 8).fillTriangle(cx + 6, cy + 16, cx + 1, cy + 8, cx + 11, cy + 8);
+      g.lineStyle(3, 0xb08d57, 1).strokeCircle(cx + 28, cy - 12, 5).lineBetween(cx + 28, cy - 7, cx + 28, cy + 20);
+    } else if (icon === 'board') {
+      g.fillStyle(0x5a4632, 1).fillRect(cx - 24, cy - 18, 48, 36);
+      g.fillStyle(paper, 1).fillRect(cx - 18, cy - 12, 14, 11).fillRect(cx + 4, cy - 4, 14, 11).fillRect(cx - 14, cy + 4, 14, 9);
+      g.fillStyle(0xe0605a, 1).fillCircle(cx - 11, cy - 12, 2.5).fillCircle(cx + 11, cy - 4, 2.5).fillCircle(cx - 7, cy + 4, 2.5);
+      g.lineStyle(1.5, 0xe0605a, 1).lineBetween(cx - 11, cy - 12, cx + 11, cy - 4);
+    } else if (icon === 'reveal') {
+      g.lineStyle(3, paper, 1);
+      g.beginPath().arc(cx, cy + 16, 26, -2.4, -0.74).strokePath();
+      g.beginPath().arc(cx, cy - 16, 26, 0.74, 2.4).strokePath();
+      g.fillStyle(amber, 1).fillCircle(cx, cy, 7);
+      g.lineStyle(2, amber, 0.8).strokeRoundedRect(cx - 26, cy - 24, 52, 48, 6);
+    }
+  }
+
+  // ---------- close-ups ----------
+
+  /** A painted close-up with its writing laid over in a hand; any click or Enter closes it. */
+  closeup(id, then) {
+    const def = CLOSEUPS[id];
+    if (!def) return then?.();
+    this.holdMessages();
+    const c = this.openModal(1060, 690, { kind: 'closeup' });
+    const { y, h } = c.box;
+    c.add(this.titleText(def.title, y + 14).setFontSize(26));
+    const boxW = 1000;
+    const boxH = 562;
+    const boxY = y + 58;
+    const img = this.add.image(WIDTH / 2, boxY + boxH / 2, def.image);
+    const s = Math.min(boxW / img.width, boxH / img.height);
+    img.setScale(s);
+    const dw = img.width * s;
+    const dh = img.height * s;
+    const left = WIDTH / 2 - dw / 2;
+    const top = boxY + boxH / 2 - dh / 2;
+    c.add(img);
+    const areas = [def.area ?? []].flat();
+    const per = Math.ceil(def.lines.length / Math.max(1, areas.length));
+    areas.forEach((area, i) => {
+      const lines = def.lines.slice(i * per, (i + 1) * per);
+      if (lines.length) c.add(this.closeupWriting({ ...def, lines, angle: area.angle ?? def.angle }, area, left, top, dw, dh));
+    });
+    const caption = def.caption ? `${def.caption}   ·   ` : '';
+    c.add(
+      this.add
+        .text(WIDTH / 2, y + h - 22, `${caption}Click to close`, { fontFamily: FONT, fontSize: '17px', fontStyle: 'italic', color: def.caption ? COLORS.paperCss : COLORS.mutedCss })
+        .setOrigin(0.5),
+    );
+    this.closeOnAnyInput(c);
+    const prev = c.onClose;
+    c.onClose = () => {
+      prev?.();
+      this.time.delayedCall(0, () => {
+        this.releaseMessages();
+        then?.();
+      });
+    };
+  }
+
+  closeupWriting(def, a, left, top, dw, dh) {
+    const scale = dw / 1000;
+    const g = this.add.container(left + (a.x + a.w / 2) * dw, top + (a.y + a.h / 2) * dh).setAngle(def.angle ?? 0);
+    const text = this.add
+      .text(0, 0, def.lines.join('\n'), {
+        fontFamily: 'Georgia, "Times New Roman", serif',
+        fontStyle: 'italic',
+        fontSize: `${Math.round(def.size * scale)}px`,
+        color: def.ink,
+        lineSpacing: Math.round(def.size * scale * 0.45),
+        wordWrap: { width: a.w * dw },
+      })
+      .setOrigin(0.5);
+    const fit = Math.min(1, (a.h * dh) / text.height, (a.w * dw) / text.width);
+    text.setScale(fit);
+    g.add(text);
+    const blank = def.lines.indexOf('');
+    if (def.anchor && blank >= 0) {
+      const lh = (text.height * fit) / def.lines.length;
+      const k = lh * 0.8;
+      const ax = (-text.width / 2) * fit + k * 0.8;
+      const ay = (-text.height / 2) * fit + (blank + 1) * lh;
+      const ink = Phaser.Display.Color.HexStringToColor(def.ink).color;
+      const anchor = this.add.graphics().lineStyle(Math.max(3, k * 0.09), ink, 0.92);
+      anchor.strokeCircle(ax, ay - k * 0.82, k * 0.16);
+      anchor.lineBetween(ax, ay - k * 0.66, ax, ay + k * 0.9);
+      anchor.lineBetween(ax - k * 0.38, ay - k * 0.38, ax + k * 0.38, ay - k * 0.38);
+      anchor.beginPath().arc(ax, ay + k * 0.25, k * 0.65, 0.35, Math.PI - 0.35).strokePath();
+      g.add(anchor);
+    }
+    return g;
   }
 
   // ---------- case file: board and notes ----------
@@ -759,8 +985,32 @@ export default class UIScene extends Phaser.Scene {
 
   // ---------- speaking tube ----------
 
+  /**
+   * The portrait texture for a speaker: painted art (worried variant when things are tense) squared
+   * to 128px, else a head crop of the idle sprite.
+   */
+  portrait(who, { worried = false, text = '' } = {}) {
+    const tense = worried || state.trust <= -TRUST_WARM || state.tide >= 4 || text.startsWith('...');
+    const art = [tense && `${who}_portrait_worried`, `${who}_portrait`].find((k) => k && this.textures.exists(k));
+    return art ? this.squarePortrait(art) : this.cropPortrait(who);
+  }
+
+  squarePortrait(art) {
+    const key = `${art}_sq`;
+    if (this.textures.exists(key)) return key;
+    const src = this.textures.get(art).getSourceImage();
+    const side = Math.min(src.width, src.height);
+    const out = this.textures.createCanvas(key, 256, 256);
+    const ctx = out.getContext();
+    ctx.fillStyle = '#1c2a37';
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.drawImage(src, (src.width - side) / 2, 0, side, side, 0, 0, 256, 256);
+    out.refresh();
+    return key;
+  }
+
   /** A head-and-shoulders crop of a character texture, made once and cached. */
-  portrait(who) {
+  cropPortrait(who) {
     const key = `portrait_${who}`;
     if (this.textures.exists(key)) return key;
     const src = this.textures.get(who).getSourceImage();
@@ -844,9 +1094,9 @@ export default class UIScene extends Phaser.Scene {
 
     let options = null;
     let opened = this.time.now;
-    const setFace = (who) => {
+    const setFace = (who, text) => {
       const ch = CHARACTERS[who];
-      face.setTexture(this.portrait(who)).setDisplaySize(132, 132);
+      face.setTexture(this.portrait(who, { text })).setDisplaySize(132, 132);
       ring.clear().lineStyle(4, ch.color, 1).strokeRect(px + 24, py + ph / 2 - 66, 132, 132);
       return ch;
     };
@@ -899,7 +1149,7 @@ export default class UIScene extends Phaser.Scene {
       }
       if (!Array.isArray(entry)) return showChoice(entry);
       const [who, text] = entry;
-      const ch = setFace(who);
+      const ch = setFace(who, text);
       name.setText(ch.name.toUpperCase()).setColor(ch.css);
       body.setText(text).setAlpha(0);
       this.tweens.add({ targets: body, alpha: 1, duration: 180 });

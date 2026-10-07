@@ -14,6 +14,32 @@ export const CHARACTER_IMAGES = {
   mara_act: 'assets/characters/mara_act.png',
   tobin: 'assets/characters/tobin.png',
   tobin_act: 'assets/characters/tobin_act.png',
+  // Side-on walk frames, crouch and talk poses; a missing pose falls back to the idle pose.
+  mara_walk_a: 'assets/characters/mara_walk_a.png',
+  mara_walk_b: 'assets/characters/mara_walk_b.png',
+  mara_crouch: 'assets/characters/mara_crouch.png',
+  mara_talk: 'assets/characters/mara_talk.png',
+  tobin_walk_a: 'assets/characters/tobin_walk_a.png',
+  tobin_walk_b: 'assets/characters/tobin_walk_b.png',
+  tobin_crouch: 'assets/characters/tobin_crouch.png',
+  tobin_talk: 'assets/characters/tobin_talk.png',
+};
+
+// Head-and-shoulders art for the talk panel. Missing ones are cropped from the idle pose instead.
+export const PORTRAIT_IMAGES = {
+  mara_portrait: 'assets/portraits/mara.png',
+  mara_portrait_worried: 'assets/portraits/mara_worried.png',
+  tobin_portrait: 'assets/portraits/tobin.png',
+  tobin_portrait_worried: 'assets/portraits/tobin_worried.png',
+};
+
+// 16:9 close-ups with blank writing areas; the readable text is drawn over them (CLOSEUPS in text.js).
+export const CLOSEUP_IMAGES = {
+  closeup_logbook: 'assets/closeups/closeup_logbook.png',
+  closeup_chalk: 'assets/closeups/closeup_chalk.png',
+  closeup_ledger: 'assets/closeups/closeup_ledger.png',
+  closeup_bootprints: 'assets/closeups/closeup_bootprints.png',
+  closeup_letter: 'assets/closeups/closeup_letter.png',
 };
 
 export const ITEM_IMAGES = {
@@ -40,12 +66,14 @@ export const UI_IMAGES = {
   lens_closeup: 'assets/ui/lens_closeup.png',
 };
 
-// Opening cutscene stills (the last shot reuses `title`).
+// Cutscene stills: the opening (its last shot reuses `title`) and the mid-game beats.
 export const CUTSCENE_IMAGES = {
   cut_storm: 'assets/cutscene/cut_storm.png',
   cut_fall: 'assets/cutscene/cut_fall.png',
   cut_rowboat: 'assets/cutscene/cut_rowboat.png',
   cut_barred: 'assets/cutscene/cut_barred.png',
+  cut_lamplit: 'assets/cutscene/cut_lamplit.png',
+  cut_arrest: 'assets/cutscene/cut_arrest.png',
 };
 
 export const AUDIO = {
