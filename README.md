@@ -49,6 +49,28 @@ npm run serve    # python3 -m http.server 8000
 
 You need a local server: opening `index.html` directly blocks image loading. On localhost, press **L** to open the layout tool. It shows every hotspot and the walkable floor line, lets you drag to measure a new rectangle (the result is copied to the clipboard), and shift-click places the character and sets the floor line. Automation can set `window.__fastWalk = true` (it is on under WebDriver) so characters teleport instead of walking.
 
+## The 3D version (experimental)
+
+`3d.html` plays the same story in first person: you *are* Mara in the round lamp room and Tobin in the stone cellar, and Tab swaps between them. It is linked from the 2D title screen ("Play the 3D version"); the 2D game in `index.html` stays the main entry.
+
+- Click the view to capture the mouse, then WASD/arrows to walk and the mouse to look. Click or **E** uses what the crosshair is on; **1-8** or the scroll wheel picks an item; **Space** labels everything in view; **Esc** lets go of the mouse and pauses. Where mouse capture is blocked (some iframes), drag to look and click to use.
+- It reuses the 2D game's logic unchanged: `src/systems/State.js`, `Interact.js` (`createApi(state, view)`), `Hints.js`, `Sfx.js` and everything in `src/data/`. `src3d/game.js` implements the same `view` contract as `GameScene`, so every puzzle, hint, trust shift, beat and ending is shared.
+- The rooms are built procedurally in Three.js (`src3d/rooms/`), vendored in `lib/three/` (r186, MIT) and loaded through an import map. Wall, floor and sea textures are DreamLayer edits of the 2D rooms (group `3d` in `tools/assets.json`), made seamless with `python3 tools/make-tileable.py`. Item icons, close-ups, portraits and cutscene stills are the 2D art, shown in HTML overlays (`src3d/ui/`).
+
+```
+3d.html                  import map + src3d/main.js
+src3d/main.js            boot, input, title → opening → play → ending
+src3d/game.js            the GameScene counterpart: view contract, swap, lightning, idle lines, endings
+src3d/world.js           renderer, camera, crosshair picking, hotspot glows, atmosphere
+src3d/controls.js        pointer lock / drag-to-look, WASD, collision
+src3d/rooms/             procedural lamp room and cellar, one mesh per hotspot id
+src3d/ui/                HTML/CSS HUD, modals, case board, cutscenes, title and ending screens
+tools/run3d.mjs          headless Chrome driver (console errors, 404s, screenshots)
+tools/playthrough3d.browser.js  full 3D playthrough through window.__game3d
+```
+
+Test it: `node tools/run3d.mjs --url http://localhost:8000/3d.html --script /tools/playthrough3d.browser.js --opts '{"actor":"mara"}' --shots /tmp/trot-3d`.
+
 ## How it's built
 
 ```
@@ -101,4 +123,4 @@ Upload the zip to itch.io as an HTML project, set the viewport to 1280x720, and 
 - Design, code and writing: Sameer Sistla
 - Art: generated with DreamLayer, cleaned up by hand (see `docs/SUBMISSION.md`)
 - Audio: see `assets/audio/CREDITS.md`
-- Engine: [Phaser 3](https://phaser.io) (MIT)
+- Engine: [Phaser 3](https://phaser.io) (MIT); 3D version: [three.js](https://threejs.org) (MIT, `lib/three/LICENSE`)

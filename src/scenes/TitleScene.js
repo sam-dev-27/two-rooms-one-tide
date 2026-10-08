@@ -45,6 +45,24 @@ export default class TitleScene extends Phaser.Scene {
       })
       .setOrigin(0, 1);
 
+    const link3d = this.add
+      .text(WIDTH - 24, HEIGHT - 24, 'Play the 3D version (experimental) →', {
+        fontFamily: FONT,
+        fontSize: '17px',
+        color: COLORS.amberCss,
+        backgroundColor: 'rgba(7,11,16,0.6)',
+        padding: { x: 10, y: 5 },
+      })
+      .setOrigin(1, 1)
+      .setInteractive({ useHandCursor: true });
+    link3d.on('pointerover', () => link3d.setColor(COLORS.paperCss));
+    link3d.on('pointerout', () => link3d.setColor(COLORS.amberCss));
+    link3d.on('pointerdown', (pointer, x, y, event) => {
+      event.stopPropagation();
+      this.starting = true;
+      window.location.href = '3d.html';
+    });
+
     this.input.once('pointerdown', () => this.begin());
     this.input.keyboard.once('keydown-ENTER', () => this.begin());
     this.input.keyboard.once('keydown-SPACE', () => this.begin());
