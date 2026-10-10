@@ -1,6 +1,8 @@
 export const WIDTH = 1280;
 export const HEIGHT = 720;
 
+// Upright Georgia for the interface and dialogue; Georgia italic for anything written by a hand in
+// the world (logbook, ledger, chalk, notes, cards, the captain's lines).
 export const FONT = 'Georgia, "Times New Roman", serif';
 
 export const COLORS = {

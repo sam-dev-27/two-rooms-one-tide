@@ -8,6 +8,11 @@ import {
   UI_IMAGES,
   CUTSCENE_IMAGES,
   CLOSEUP_IMAGES,
+  GHOST_IMAGES,
+  VISION_IMAGES,
+  HATCH_IMAGES,
+  RAIDER_IMAGES,
+  RAID_STILLS,
   AUDIO,
 } from '../data/assets.js';
 import { makePlaceholder } from '../systems/Placeholders.js';
@@ -23,16 +28,23 @@ const IMAGE_GROUPS = [
   ['screen', UI_IMAGES],
   ['screen', CUTSCENE_IMAGES],
   ['closeup', CLOSEUP_IMAGES],
+  ['ghost', GHOST_IMAGES],
+  ['vision', VISION_IMAGES],
+  ['hatch', HATCH_IMAGES],
+  ['raider', RAIDER_IMAGES],
+  ['still', RAID_STILLS],
 ];
 
 const TRIM = {
   character: { maxSourceSize: 1024 },
+  raider: { maxSourceSize: 1024 },
   portrait: { maxSourceSize: 512 },
   item: { maxSourceSize: 384 },
   prop: { maxSourceSize: 384 },
 };
-// Groups whose missing images fall back in code (portraits are cropped from the idle pose).
-const NO_PLACEHOLDER = new Set(['portrait']);
+// Groups whose missing images fall back in code (portraits are cropped from the idle pose,
+// visions and stills show existing art instead, the hatch cellar falls back to the plain cellar).
+const NO_PLACEHOLDER = new Set(['portrait', 'vision', 'hatch', 'still']);
 
 export default class BootScene extends Phaser.Scene {
   constructor() {

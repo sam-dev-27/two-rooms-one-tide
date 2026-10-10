@@ -21,7 +21,7 @@ export default class EndingScene extends Phaser.Scene {
       .setAlpha(0);
     // The case board's verdict sits under the last card: what the player believed, not what happened.
     const verdict = this.add
-      .text(WIDTH / 2, HEIGHT / 2 + 56, epilogue ?? '', { fontFamily: FONT, fontSize: '22px', fontStyle: 'italic', color: COLORS.amberCss })
+      .text(WIDTH / 2, HEIGHT / 2 + 56, epilogue ?? '', { fontFamily: FONT, fontSize: '22px', color: COLORS.amberCss })
       .setOrigin(0.5)
       .setAlpha(0);
     this.tweens.chain({
@@ -52,7 +52,7 @@ export default class EndingScene extends Phaser.Scene {
     const title = this.add
       .text(80, 110, ending.title, { fontFamily: FONT, fontSize: '64px', color: COLORS.paperCss, fontStyle: 'bold' })
       .setShadow(0, 4, '#000', 12, true, true);
-    const tagline = this.add.text(84, title.y + title.height + 12, TAGLINE, { fontFamily: FONT, fontSize: '24px', color: COLORS.amberCss, fontStyle: 'italic' });
+    const tagline = this.add.text(84, title.y + title.height + 12, TAGLINE, { fontFamily: FONT, fontSize: '24px', color: COLORS.amberCss });
     const stats = this.add.text(84, tagline.y + 70, `Finished in ${time}  ·  Hints used: ${state.hintsUsed}  ·  Tide ${state.tideBand ?? state.tide}/6`, {
       fontFamily: FONT,
       fontSize: '18px',

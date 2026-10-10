@@ -3,14 +3,17 @@ import { CHARACTERS, ROOMS } from '../data/rooms.js';
 import { ITEMS } from '../data/items.js';
 import { CARDS, COLUMNS } from '../data/board.js';
 import { CARD_TOAST, CHOICE_LABELS, CLOSEUPS, HOLD_TEXT, HOW_TO, REVEAL_TIP, TRUST_WARM, TUTORIAL, trustLabel } from '../data/text.js';
+import { CAPTAIN, CHAPTERS } from '../data/story.js';
 import { state } from '../systems/State.js';
 import { isStuck, objective, useHint } from '../systems/Hints.js';
 import { sfx } from '../systems/Sfx.js';
 
 const BAR_H = 84;
-const TOP_H = 70;
-const TOP_ROW = 22;
-const OBJ_ROW = 53;
+const TOP_H = 62;
+const TOP_ROW = 19;
+const OBJ_ROW = 46;
+const CHAPTER_HOLD_MS = 2400;
+const LOG_NAME_W = 96;
 const REVEAL_TIP_MS = 240_000;
 const SLOT = 64;
 const SLOT_GAP = 12;
@@ -55,6 +58,8 @@ export default class UIScene extends Phaser.Scene {
     kb.on('keydown-H', () => !this.modal && this.showHint());
     kb.on('keydown-N', () => this.toggleCase('notes'));
     kb.on('keydown-C', () => this.toggleCase('board'));
+    kb.on('keydown-L', () => this.toggleCase('log'));
+    this.chapters = [];
     kb.on('keydown-M', () => this.toggleMute());
     kb.on('keydown-ESC', () => (this.modal?.closable ? this.closeModal() : state.select(null)));
     kb.addCapture('F1');
@@ -64,6 +69,7 @@ export default class UIScene extends Phaser.Scene {
     state.on('inventory', this.refresh, this);
     state.on('select', this.refresh, this);
     state.on('swap', this.refresh, this);
+    state.on('area', this.refresh, this);
     state.on('tide', this.drawTide, this);
     state.on('card', this.onCard, this);
     state.on('board', this.updateCaseButton, this);
@@ -79,6 +85,7 @@ export default class UIScene extends Phaser.Scene {
 
     this.drawHold();
     this.updateObjective();
+    if (this.chapters.length && !this.modal && !state.modal) this.nextChapterCard();
 
     const stuck = isStuck(state);
     if (stuck && !this.pulse) {
@@ -110,28 +117,31 @@ export default class UIScene extends Phaser.Scene {
   createTopBar() {
     // Interactive so clicks on the bar never walk the character or reach hotspots behind it.
     this.add.rectangle(0, 0, WIDTH, TOP_H, COLORS.ink, 0.62).setOrigin(0).setInteractive();
-    this.whoText = this.add.text(24, TOP_ROW, '', { fontFamily: FONT, fontSize: '21px', color: COLORS.paperCss }).setOrigin(0, 0.5);
+    this.whoText = this.add.text(22, TOP_ROW, '', { fontFamily: FONT, fontSize: '18px', color: COLORS.paperCss }).setOrigin(0, 0.5);
     this.tideGfx = this.add.graphics();
-    this.tideLabel = this.add.text(0, TOP_ROW, '', { fontFamily: FONT, fontSize: '15px', color: COLORS.mutedCss }).setOrigin(0, 0.5);
-    this.objText = this.add.text(24, OBJ_ROW, '', { fontFamily: FONT, fontSize: '17px', color: COLORS.amberCss }).setOrigin(0, 0.5);
+    this.tideLabel = this.add.text(0, TOP_ROW, '', { fontFamily: FONT, fontSize: '13px', color: COLORS.mutedCss }).setOrigin(0, 0.5);
+    this.objText = this.add.text(22, OBJ_ROW, '', { fontFamily: FONT, fontSize: '15px', color: COLORS.amberCss }).setOrigin(0, 0.5);
     this.revealTip = this.add
-      .text(WIDTH - 16, OBJ_ROW, REVEAL_TIP, { fontFamily: FONT, fontSize: '15px', fontStyle: 'italic', color: COLORS.mutedCss })
+      .text(WIDTH - 16, OBJ_ROW, REVEAL_TIP, { fontFamily: FONT, fontSize: '13px', color: COLORS.mutedCss })
       .setOrigin(1, 0.5)
       .setVisible(false);
     this.objective = null;
-    this.swapBtn = this.makeButton(0, TOP_ROW, '', () => state.emit('request-swap'), '17px');
-    this.hintBtn = this.makeButton(0, TOP_ROW, 'Hint (H)', () => this.showHint(), '17px');
-    this.caseBtn = this.makeButton(0, TOP_ROW, 'Case (C)', () => this.toggleCase('board'), '17px');
-    this.muteBtn = this.makeButton(0, TOP_ROW, sfx.muted ? 'Sound off' : 'Sound on', () => this.toggleMute(), '17px');
-    this.helpBtn = this.makeButton(0, TOP_ROW, '?', () => this.toggleHowTo(), '17px');
+    const small = '15px';
+    this.swapBtn = this.makeButton(0, TOP_ROW, '', () => state.emit('request-swap'), small);
+    this.hintBtn = this.makeButton(0, TOP_ROW, 'Hint (H)', () => this.showHint(), small);
+    this.caseBtn = this.makeButton(0, TOP_ROW, 'Case (C)', () => this.toggleCase('board'), small);
+    this.logBtn = this.makeButton(0, TOP_ROW, 'Log (L)', () => this.toggleCase('log'), small);
+    this.muteBtn = this.makeButton(0, TOP_ROW, sfx.muted ? 'Sound off' : 'Sound on', () => this.toggleMute(), small);
+    this.helpBtn = this.makeButton(0, TOP_ROW, '?', () => this.toggleHowTo(), small);
+    for (const btn of [this.swapBtn, this.hintBtn, this.caseBtn, this.logBtn, this.muteBtn, this.helpBtn]) btn.setPadding(11, 5, 11, 5);
     this.layoutTopButtons();
   }
 
   layoutTopButtons() {
-    let x = WIDTH - 16;
-    for (const btn of [this.helpBtn, this.muteBtn, this.caseBtn, this.hintBtn, this.swapBtn]) {
+    let x = WIDTH - 14;
+    for (const btn of [this.helpBtn, this.muteBtn, this.logBtn, this.caseBtn, this.hintBtn, this.swapBtn]) {
       btn.setOrigin(1, 0.5).setX(x);
-      x -= btn.width + 8;
+      x -= btn.width + 6;
     }
   }
 
@@ -140,11 +150,12 @@ export default class UIScene extends Phaser.Scene {
     const tip = !state.seen.has('space_reveal') && Date.now() - state.startedAt < REVEAL_TIP_MS;
     if (this.revealTip.visible !== tip) this.revealTip.setVisible(tip);
     const text = objective(state);
-    const key = `${state.active}:${text}`;
+    const back = ROOMS[state.room].back;
+    const key = `${state.active}:${state.room}:${text}`;
     if (key === this.objective) return;
-    const changed = this.objective !== null && this.objective.startsWith(state.active) && text;
+    const changed = this.objective !== null && this.objective.startsWith(state.active) && !this.objective.endsWith(`:${text}`) && text;
     this.objective = key;
-    this.objText.setText(text ? `Objective: ${text}` : '');
+    this.objText.setText(text ? `Objective: ${text}${back && !text.startsWith('Switch') ? `  ·  ${back}` : ''}` : '');
     if (!changed) return;
     this.tweens.killTweensOf(this.objText);
     this.objText.setScale(1).setColor('#fff6dc');
@@ -168,7 +179,7 @@ export default class UIScene extends Phaser.Scene {
     this.itemInfo = this.add
       .text(SLOT_X0 + SLOT_COUNT * (SLOT + SLOT_GAP) + 12, HEIGHT - BAR_H / 2, '', {
         fontFamily: FONT,
-        fontSize: '18px',
+        fontSize: '16px',
         color: COLORS.mutedCss,
         wordWrap: { width: WIDTH - (SLOT_X0 + SLOT_COUNT * (SLOT + SLOT_GAP) + 36) },
       })
@@ -206,7 +217,7 @@ export default class UIScene extends Phaser.Scene {
     });
 
     const who = CHARACTERS[state.active];
-    this.whoText.setText(`${who.name}  ·  ${ROOMS[who.room].name}`);
+    this.whoText.setText(`${who.name}  ·  ${ROOMS[state.room].name}`);
     const waiting = state.arrivals[state.other].length;
     this.swapBtn.setText(`Switch to ${CHARACTERS[state.other].name} (Tab)${waiting ? `  ·  ${waiting} in the hatch` : ''}`);
     this.updateCaseButton();
@@ -241,7 +252,7 @@ export default class UIScene extends Phaser.Scene {
     this.msg = this.add.container(WIDTH / 2, HEIGHT - BAR_H - 24).setAlpha(0).setDepth(50);
     this.msgBg = this.add.graphics();
     this.msgText = this.add
-      .text(0, 0, '', { fontFamily: FONT, fontSize: '21px', color: COLORS.paperCss, align: 'center', wordWrap: { width: 860 }, lineSpacing: 4 })
+      .text(0, 0, '', { fontFamily: FONT, fontSize: '18px', color: COLORS.paperCss, align: 'center', wordWrap: { width: 820 }, lineSpacing: 4 })
       .setOrigin(0.5, 1);
     this.msg.add([this.msgBg, this.msgText]);
   }
@@ -291,8 +302,8 @@ export default class UIScene extends Phaser.Scene {
     const w = this.msgText.width;
     const h = this.msgText.height;
     this.msgBg.clear();
-    this.msgBg.fillStyle(COLORS.ink, 0.88).fillRoundedRect(-w / 2 - 22, -h - 14, w + 44, h + 28, 12);
-    this.msgBg.lineStyle(1, COLORS.amber, 0.45).strokeRoundedRect(-w / 2 - 22, -h - 14, w + 44, h + 28, 12);
+    this.msgBg.fillStyle(COLORS.ink, 0.88).fillRoundedRect(-w / 2 - 20, -h - 12, w + 40, h + 24, 11);
+    this.msgBg.lineStyle(1, COLORS.amber, 0.45).strokeRoundedRect(-w / 2 - 20, -h - 12, w + 40, h + 24, 11);
     this.tweens.killTweensOf(this.msg);
     this.msg.setAlpha(0.3).setY(HEIGHT - BAR_H - 18);
     this.tweens.add({ targets: this.msg, alpha: 1, y: HEIGHT - BAR_H - 24, duration: 180, ease: 'Cubic.Out' });
@@ -301,13 +312,13 @@ export default class UIScene extends Phaser.Scene {
 
   createToast() {
     this.toastText = this.add
-      .text(WIDTH / 2, TOP_H + 18, '', {
+      .text(WIDTH / 2, TOP_H + 16, '', {
         fontFamily: FONT,
-        fontSize: '19px',
+        fontSize: '16px',
         color: '#10161b',
         backgroundColor: COLORS.amberCss,
-        padding: { x: 16, y: 8 },
-        wordWrap: { width: 620 },
+        padding: { x: 14, y: 7 },
+        wordWrap: { width: 580 },
         align: 'center',
       })
       .setOrigin(0.5, 0)
@@ -317,11 +328,11 @@ export default class UIScene extends Phaser.Scene {
     this.cardToast = this.add
       .text(16, TOP_H + 8, '', {
         fontFamily: FONT,
-        fontSize: '15px',
+        fontSize: '13px',
         color: COLORS.paperCss,
         backgroundColor: 'rgba(17,26,36,0.92)',
-        padding: { x: 12, y: 6 },
-        wordWrap: { width: 270 },
+        padding: { x: 10, y: 5 },
+        wordWrap: { width: 250 },
       })
       .setAlpha(0)
       .setDepth(60);
@@ -388,7 +399,7 @@ export default class UIScene extends Phaser.Scene {
   createHoldIndicator() {
     this.holdRing = this.add.graphics().setDepth(55);
     this.holdText = this.add
-      .text(WIDTH - 16, TOP_H + 8, '', { fontFamily: FONT, fontSize: '16px', color: '#10161b', backgroundColor: COLORS.amberCss, padding: { x: 12, y: 6 } })
+      .text(WIDTH - 16, TOP_H + 8, '', { fontFamily: FONT, fontSize: '14px', color: '#10161b', backgroundColor: COLORS.amberCss, padding: { x: 10, y: 5 } })
       .setOrigin(1, 0)
       .setVisible(false)
       .setDepth(55);
@@ -427,7 +438,8 @@ export default class UIScene extends Phaser.Scene {
   showHint() {
     if (this.modal) return;
     this.clearMessages();
-    this.say(useHint(state));
+    const back = ROOMS[state.room].main && `First, go ${ROOMS[state.room].back.replace(/ first$/, '')}. `;
+    this.say(`${back || ''}${useHint(state)}`);
   }
 
   toggleMute() {
@@ -571,7 +583,6 @@ export default class UIScene extends Phaser.Scene {
         .text(WIDTH / 2, y + h - 34, 'Click or press Enter to begin   ·   ? or F1 shows this again', {
           fontFamily: FONT,
           fontSize: '16px',
-          fontStyle: 'italic',
           color: COLORS.amberCss,
         })
         .setOrigin(0.5),
@@ -656,7 +667,7 @@ export default class UIScene extends Phaser.Scene {
     const caption = def.caption ? `${def.caption}   ·   ` : '';
     c.add(
       this.add
-        .text(WIDTH / 2, y + h - 22, `${caption}Click to close`, { fontFamily: FONT, fontSize: '17px', fontStyle: 'italic', color: def.caption ? COLORS.paperCss : COLORS.mutedCss })
+        .text(WIDTH / 2, y + h - 22, `${caption}Click to close`, { fontFamily: FONT, fontSize: '17px', color: def.caption ? COLORS.paperCss : COLORS.mutedCss })
         .setOrigin(0.5),
     );
     this.closeOnAnyInput(c);
@@ -675,7 +686,7 @@ export default class UIScene extends Phaser.Scene {
     const g = this.add.container(left + (a.x + a.w / 2) * dw, top + (a.y + a.h / 2) * dh).setAngle(def.angle ?? 0);
     const text = this.add
       .text(0, 0, def.lines.join('\n'), {
-        fontFamily: 'Georgia, "Times New Roman", serif',
+        fontFamily: FONT,
         fontStyle: 'italic',
         fontSize: `${Math.round(def.size * scale)}px`,
         color: def.ink,
@@ -724,10 +735,161 @@ export default class UIScene extends Phaser.Scene {
     };
     const boardTab = tabBtn(x + 130, 'Board (C)', 'board');
     const notesTab = tabBtn(x + 130 + boardTab.width + 10, 'Notes (N)', 'notes');
+    const logTab = tabBtn(notesTab.x + notesTab.width + 10, 'Log (L)', 'log');
     const close = this.makeButton(x + w - 24, y + 24, 'Close (Esc)', () => this.closeModal(), '17px').setOrigin(1, 0);
-    c.add([boardTab, notesTab, close]);
+    c.add([boardTab, notesTab, logTab, close]);
     if (tab === 'notes') this.renderNotes(c);
+    else if (tab === 'log') this.renderLog(c);
     else this.renderBoard(c);
+  }
+
+  /**
+   * The story so far, by chapter: tube talk, the captain's words, key narration and every choice
+   * with the lines that weren't taken. Scrolls with the wheel, arrow keys or Page Up / Down.
+   */
+  renderLog(c) {
+    const { x, y, w, h } = c.box;
+    const view = { x: x + 30, y: y + 78, w: w - 60, h: h - 100 };
+    const content = this.add.container(view.x, view.y);
+    const bodyW = view.w - LOG_NAME_W - 20;
+    let cy = 0;
+    let chapter;
+    const add = (obj, gap = 8) => {
+      content.add(obj);
+      cy += obj.height + gap;
+      return obj;
+    };
+    const header = (id) => {
+      const def = CHAPTERS[id];
+      if (!def) return;
+      cy += content.length ? 14 : 0;
+      add(this.add.text(0, cy, `${def.numeral}.  ${def.title}`, { fontFamily: FONT, fontSize: '22px', color: COLORS.amberCss }), 2);
+      const rule = this.add.rectangle(0, cy, view.w, 1, COLORS.amber, 0.35).setOrigin(0);
+      content.add(rule);
+      cy += 10;
+    };
+    const line = (label, labelColor, text, style) => {
+      if (label) content.add(this.add.text(0, cy + 2, label, { fontFamily: FONT, fontSize: '14px', fontStyle: 'bold', color: labelColor }));
+      add(this.add.text(LOG_NAME_W, cy, text, { fontFamily: FONT, fontSize: '17px', color: COLORS.paperCss, wordWrap: { width: bodyW }, lineSpacing: 3, ...style }));
+    };
+    for (const e of state.log) {
+      if (e.kind === 'chapter') {
+        header(e.text);
+        chapter = e.text;
+        continue;
+      }
+      if (e.chapter !== chapter) {
+        header(e.chapter);
+        chapter = e.chapter;
+      }
+      if (e.kind === 'talk') line(CHARACTERS[e.who].name.toUpperCase(), CHARACTERS[e.who].css, e.text);
+      else if (e.kind === 'ghost') line('HALE', CAPTAIN.css, e.text, { fontStyle: 'italic', color: CAPTAIN.css });
+      else if (e.kind === 'vision') line('', null, e.text, { fontStyle: 'italic', fontSize: '16px', color: '#a9c6cf' });
+      else if (e.kind === 'narration') line('', null, e.text, { color: COLORS.mutedCss, fontSize: '16px' });
+      else if (e.kind === 'choice') {
+        const who = CHARACTERS[e.who];
+        line(who ? `${who.name.toUpperCase()}` : 'CHOICE', who?.css ?? COLORS.amberCss, e.text ? `${e.text}:` : 'Chose a line:', { color: COLORS.amberCss, fontSize: '15px' });
+        e.options.forEach((opt, i) => {
+          const chosen = i === e.chosen;
+          add(
+            this.add.text(LOG_NAME_W + 14, cy, `${chosen ? '▸' : '·'}  ${opt}`, {
+              fontFamily: FONT,
+              fontSize: '16px',
+              fontStyle: chosen ? 'bold' : 'normal',
+              color: chosen ? '#fff1cf' : '#62707b',
+              wordWrap: { width: bodyW - 14 },
+            }),
+            4,
+          );
+        });
+        cy += 6;
+      }
+    }
+    if (!state.log.length) add(this.add.text(0, 0, 'Nothing has happened yet.', { fontFamily: FONT, fontSize: '18px', color: COLORS.mutedCss }));
+    const maskGfx = this.make.graphics().fillRect(view.x, view.y, view.w, view.h);
+    content.setMask(maskGfx.createGeometryMask());
+    c.add(content);
+
+    const maxScroll = Math.max(0, cy - view.h);
+    const bar = this.add.rectangle(x + w - 18, view.y, 4, 0, COLORS.amber, 0.6).setOrigin(0.5, 0);
+    c.add(bar);
+    let scroll = maxScroll;
+    const apply = () => {
+      scroll = Phaser.Math.Clamp(scroll, 0, maxScroll);
+      content.y = view.y - scroll;
+      const frac = view.h / Math.max(cy, view.h);
+      bar.setVisible(maxScroll > 0).setSize(4, view.h * frac).setY(view.y + (view.h - view.h * frac) * (maxScroll ? scroll / maxScroll : 0));
+    };
+    apply();
+    const onWheel = (_p, _over, _dx, dy) => {
+      scroll += dy * 0.8;
+      apply();
+    };
+    this.input.on('wheel', onWheel);
+    this.onKeys(c, {
+      down: (e) => {
+        const step = { ArrowUp: -40, ArrowDown: 40, PageUp: -view.h * 0.85, PageDown: view.h * 0.85, Home: -1e6, End: 1e6 }[e.key];
+        if (!step) return;
+        scroll += step;
+        apply();
+      },
+    });
+    const prev = c.onClose;
+    c.onClose = () => {
+      this.input.off('wheel', onWheel);
+      prev?.();
+    };
+  }
+
+  // ---------- chapter cards ----------
+
+  /** Queues a chapter title card; it shows as soon as nothing else is on screen. */
+  chapterCard(def, then) {
+    this.chapters.push({ def, then });
+    if (!this.modal && !state.modal) this.nextChapterCard();
+  }
+
+  nextChapterCard() {
+    const { def, then } = this.chapters.shift();
+    this.clearMessages();
+    state.modal = true;
+    const c = this.add.container(0, 0).setDepth(180);
+    const black = this.add.rectangle(0, 0, WIDTH, HEIGHT, 0x05080b, 0.94).setOrigin(0).setInteractive({ useHandCursor: true });
+    const numeral = this.add.text(WIDTH / 2, HEIGHT / 2 - 92, `${def.numeral}.`, { fontFamily: FONT, fontSize: '30px', color: COLORS.amberCss }).setOrigin(0.5);
+    const title = this.add.text(WIDTH / 2, HEIGHT / 2 - 34, def.title, { fontFamily: FONT, fontSize: '46px', color: COLORS.paperCss }).setOrigin(0.5);
+    const rule = this.add.rectangle(WIDTH / 2, HEIGHT / 2 + 10, 220, 1, COLORS.amber, 0.6);
+    const line = this.add.text(WIDTH / 2, HEIGHT / 2 + 54, def.line, { fontFamily: FONT, fontSize: '24px', fontStyle: 'italic', color: '#c9d6dc' }).setOrigin(0.5);
+    const skip = this.add.text(WIDTH - 24, HEIGHT - 24, 'Click to continue', { fontFamily: FONT, fontSize: '14px', color: COLORS.mutedCss }).setOrigin(1, 1);
+    const parts = [numeral, title, rule, line, skip];
+    c.add([black, ...parts]);
+    Object.assign(c, { closable: false, kind: 'chapter' });
+    this.modal = c;
+    c.setAlpha(0);
+    const fast = window.__fastStory ?? navigator.webdriver === true;
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      this.tweens.killTweensOf(c);
+      this.tweens.add({
+        targets: c,
+        alpha: 0,
+        duration: fast ? 100 : 500,
+        onComplete: () => {
+          if (this.modal === c) this.closeModal();
+          then?.();
+        },
+      });
+    };
+    this.tweens.add({ targets: c, alpha: 1, duration: fast ? 100 : 600 });
+    parts.forEach((p, i) => {
+      p.setAlpha(0);
+      this.tweens.add({ targets: p, alpha: 1, duration: 500, delay: (fast ? 0 : 300) + i * 180 });
+    });
+    const opened = this.time.now;
+    black.on('pointerdown', () => this.time.now - opened > 250 && finish());
+    this.onKeys(c, { down: (e) => ['Escape', 'Enter', ' '].includes(e.key) && finish() });
+    this.time.delayedCall(fast ? 300 : CHAPTER_HOLD_MS + 1100, finish);
   }
 
   toggleNotes() {
@@ -756,7 +918,7 @@ export default class UIScene extends Phaser.Scene {
     let reaction = null;
 
     const trust = this.add
-      .text(x + w - 160, y + 33, `Between them: ${trustLabel(state)}`, { fontFamily: FONT, fontSize: '16px', fontStyle: 'italic', color: COLORS.mutedCss })
+      .text(x + w - 160, y + 33, `Between them: ${trustLabel(state)}`, { fontFamily: FONT, fontSize: '16px', color: COLORS.mutedCss })
       .setOrigin(1, 0.5);
     const trayBg = this.add.rectangle(tray.x, tray.y, tray.w, tray.h, 0x0b1118, 0.7).setOrigin(0).setStrokeStyle(1, 0x3b5266).setInteractive();
     const trayLabel = this.add.text(tray.x, tray.y - 24, 'Clues', { fontFamily: FONT, fontSize: '17px', color: COLORS.mutedCss });
@@ -817,8 +979,7 @@ export default class UIScene extends Phaser.Scene {
       const tw = CARD_W - 56;
       const title = this.add.text(ix + 23, -CARD_H / 2 + 5, def.title, { fontFamily: FONT, fontSize: '14px', fontStyle: 'bold', color: '#2a1f12' });
       if (title.width > tw) title.setScale(tw / title.width, 1);
-      const line = this.add.text(ix + 23, -CARD_H / 2 + 23, def.text, { fontFamily: FONT, fontSize: '12px', fontStyle: 'italic', color: '#5a4630', wordWrap: { width: tw } });
-      if (line.height > 30) line.setFontSize(11);
+      const line = this.add.text(ix + 23, -CARD_H / 2 + 22, def.text, { fontFamily: FONT, fontSize: '12px', fontStyle: 'italic', color: '#5a4630', wordWrap: { width: tw } });
       parts.push(title, line);
       if (state.board[id].fresh) {
         parts.push(this.add.text(CARD_W / 2 - 4, -CARD_H / 2 - 6, 'NEW', { fontFamily: FONT, fontSize: '11px', fontStyle: 'bold', color: '#fff6dc', backgroundColor: '#b5413a', padding: { x: 5, y: 1 } }).setOrigin(1, 0));
@@ -1071,10 +1232,10 @@ export default class UIScene extends Phaser.Scene {
     const hit = this.add.rectangle(px, py, pw, ph, 0x000000, 0.001).setOrigin(0).setInteractive({ useHandCursor: true });
     const face = this.add.image(px + 90, py + ph / 2, this.portrait(speaker(queue[0]))).setDisplaySize(132, 132);
     const ring = this.add.graphics();
-    const name = this.add.text(px + 180, py + 20, '', { fontFamily: FONT, fontSize: '20px', fontStyle: 'bold', color: COLORS.paperCss });
-    const body = this.add.text(px + 180, py + 52, '', {
+    const name = this.add.text(px + 180, py + 20, '', { fontFamily: FONT, fontSize: '17px', fontStyle: 'bold', color: COLORS.paperCss });
+    const body = this.add.text(px + 180, py + 50, '', {
       fontFamily: FONT,
-      fontSize: '22px',
+      fontSize: '20px',
       color: COLORS.paperCss,
       wordWrap: { width: pw - 220 },
       lineSpacing: 5,
@@ -1083,10 +1244,10 @@ export default class UIScene extends Phaser.Scene {
       .text(px + pw - 20, py + ph - 14, 'Click or Space', { fontFamily: FONT, fontSize: '15px', color: COLORS.mutedCss })
       .setOrigin(1, 1);
     const tube = this.add
-      .text(px + 20, py - 10, 'Speaking tube', { fontFamily: FONT, fontSize: '15px', fontStyle: 'italic', color: COLORS.amberCss })
+      .text(px + 20, py - 10, 'Speaking tube', { fontFamily: FONT, fontSize: '15px', color: COLORS.amberCss })
       .setOrigin(0, 1);
     const remember = this.add
-      .text(px + pw - 20, py - 10, '', { fontFamily: FONT, fontSize: '16px', fontStyle: 'italic', color: COLORS.amberCss })
+      .text(px + pw - 20, py - 10, '', { fontFamily: FONT, fontSize: '16px', color: COLORS.amberCss })
       .setOrigin(1, 1);
     c.add([dim, panel, hit, face, ring, name, body, more, tube, remember]);
     Object.assign(c, { closable: false, kind: 'talk' });
@@ -1123,9 +1284,9 @@ export default class UIScene extends Phaser.Scene {
       if (state.markSeen('tube_choice')) this.toast(TUTORIAL.choice);
       options = entry.options.map((option, i) => {
         const btn = this.add
-          .text(px + 180, py + 54 + i * 40, `${i + 1}.  ${CHOICE_LABELS[option.kind]}:  ${option.label}`, {
+          .text(px + 180, py + 52 + i * 40, `${i + 1}.  ${CHOICE_LABELS[option.kind]}:  ${option.label}`, {
             fontFamily: FONT,
-            fontSize: '19px',
+            fontSize: '17px',
             color: CHOICE_HEX[option.kind],
             backgroundColor: BUTTON_BG,
             padding: { x: 12, y: 5 },
@@ -1197,7 +1358,7 @@ export default class UIScene extends Phaser.Scene {
     const parts = [t, body];
     if (footer) {
       parts.push(
-        this.add.text(82, body.y + body.height + 20, footer, { fontFamily: FONT, fontSize: '18px', fontStyle: 'italic', color: COLORS.amberCss, wordWrap: { width: 620 } }),
+        this.add.text(82, body.y + body.height + 20, footer, { fontFamily: FONT, fontSize: '18px', color: COLORS.amberCss, wordWrap: { width: 620 } }),
       );
     }
     const btn = this.makeButton(82, HEIGHT - 80, 'Continue', () => {

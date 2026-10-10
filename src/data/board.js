@@ -34,6 +34,17 @@ export const CARDS = {
   alibi_mara_here: { title: 'Thursday visit', text: 'Mara: "He was alive."', glyph: '!', detail: 'Mara admitted she was on the rock on Thursday and argued with Elias on the balcony. She says he was alive when she left.' },
   low_orders: { title: 'E\'s orders', text: 'Tobin turned it low.', glyph: '¶', detail: 'Tobin admitted he turned the lamp low on rough nights himself, on Elias\'s orders. He says Elias called it resting the generator.' },
   crane_offer: { title: 'Crane\'s offer', text: 'Mara says she refused.', glyph: '£', detail: 'Mara says Crane offered her money to log "no signal" for the Marigold, and she said no.' },
+  // The side areas and Captain Hale (GHOSTS in story.js). Visions are what he showed, not proof.
+  captain: { title: 'Captain Hale', text: 'Master of the Marigold.', glyph: '†', detail: 'A drowned man in a captain\'s coat, seen on the rock tonight. He named himself Hale, of the Marigold. He talks in riddles and never names anyone.' },
+  vision_dim: { title: 'A careful hand', text: 'The lamp turned low.', glyph: '◐', detail: 'The captain showed it: three years ago, a hand on the rheostat turning the lamp low and orange. He said it was a hand that loved the tower.' },
+  vision_marigold: { title: 'Danny singing', text: 'Then the reef.', glyph: '⚓\uFE0E', detail: 'The captain showed it: the Marigold rounding the reef in the dark, a deckhand called Danny Quell singing on the foredeck.' },
+  vision_stairs: { title: 'Boots on the stairs', text: 'Up, more up, one down.', glyph: '⁞', detail: 'The captain showed it: Thursday, boots climbing the stairs, then other boots. A raised voice at the rail. Then one pair going down, quickly. No faces.' },
+  marigold_last: { title: 'The Marigold\'s last minutes', text: 'Lit, dimmed, lit too late.', glyph: '≈', detail: 'The captain showed how he died: steering by Gull Rock Light until a hand that knew the lamp turned it down; the reef; and the light coming back to full when nobody could be saved. He never showed whose hand.' },
+  vision_crane: { title: 'Paid in full', text: 'A pen in the harbour office.', glyph: '£', detail: 'The captain showed it: the morning after the Marigold, a pen in the harbour office writing "Marigold. Reef. Paid in full."' },
+  tally: { title: 'Nine marks', text: 'Two of them fresh.', glyph: 'IX', detail: 'Nine tally marks scratched into the lamp-room window frame out on the gallery. The last two are bright and new.' },
+  cut_rope: { title: 'Cut rope', text: 'Two rings. One boat.', glyph: '⌇', detail: 'Two mooring rings below the gallery. Mara\'s boat is tied to one; on the other, a rope end cut clean with a knife.' },
+  stay_in_town: { title: '"Not Thursday"', text: '"Stay in town. — E."', glyph: '✉', detail: 'A note folded behind the lantern in the wheel chamber: "T. — not Thursday. Stay in town. — E." Elias wanted Tobin away that night.' },
+  slate: { title: 'Wheel slowed', text: 'Nine dates on a slate.', glyph: '▤', detail: 'Elias\'s slate on the wheel-chamber bench: "wheel slowed" against nine dates. Every one is the night a ship was lost.' },
 };
 
 // Lines the controlled character says when a card is first pinned to a column. Never a verdict.
@@ -59,6 +70,15 @@ export const REACTIONS = [
   { card: 'low_orders', column: 'tobin', mara: 'At least he told me himself.', tobin: 'I told her the truth. It still sounds bad out loud.' },
   { card: 'alibi_mara_never', column: 'mara', mara: 'I said a lot of things tonight.', tobin: 'Never been out here. She said that very smoothly.' },
   { card: 'alibi_tobin_aunt', column: 'tobin', mara: 'His aunt. I\'d like to meet his aunt.', tobin: 'Auntie would vouch for me. Mostly.' },
+  { card: 'captain', column: 'triangle', mara: 'A drowned man on a lighthouse. The Triangle would love that.', tobin: 'If the sea sends its dead back, it\'s not to push keepers off rails.' },
+  { card: 'vision_dim', column: 'tobin', mara: 'A hand that loved the tower. Tobin loves this tower.', tobin: 'I turned it low. Elias turned it lower. We both loved it.' },
+  { card: 'vision_crane', column: 'crane', mara: 'Paid in full. Danny had a price, and Crane paid it.', tobin: 'He never set foot on the rock. He didn\'t have to.' },
+  { card: 'marigold_last', column: 'crane', mara: 'Somebody turned it down for Crane, and turned it back up for the inquiry.', tobin: 'Back up to full afterwards. So the log would say the light was fine.' },
+  { card: 'marigold_last', column: 'tobin', mara: 'A hand that knew the lamp. There aren\'t many on this rock.', tobin: 'I knew that lamp. I know how that sounds.' },
+  { card: 'vision_stairs', column: 'mara', mara: 'Some of those boots were mine. I\'m not pretending otherwise.', tobin: 'She was up there. She said so. ...Didn\'t she?' },
+  { card: 'stay_in_town', column: 'tobin', mara: 'Elias wanted him away. Away from what?', tobin: 'He told me to stay in town. I didn\'t listen.' },
+  { card: 'cut_rope', column: 'crane', mara: 'Somebody left in a hurry and didn\'t untie.', tobin: 'Crane\'s men cut ropes. They don\'t have time for knots.' },
+  { card: 'slate', column: 'crane', mara: 'Nine dates. Nine payouts. Somebody kept the books on both ends.', tobin: 'Gertie never slowed on her own. Not once.' },
 ];
 
 /** The reaction for pinning `card` on `column` as `actor`, or null. */

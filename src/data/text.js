@@ -1,3 +1,5 @@
+import { RAID_TEXT } from './raid.js';
+
 export const TITLE = 'Two Rooms, One Tide';
 export const TAGLINE = 'Two people. Two rooms. One rising tide.';
 
@@ -239,8 +241,8 @@ export const TALKS = [
     id: 'talk_1',
     when: (s) => s.has('read_logbook') && s.has('knows_code'),
     lines: (s) => [
-      ['tobin', 'Mara? The tube still works. Elias used to shout the tea order down it.'],
-      ['mara', 'I hear you. Barred up here too.'],
+      ['tobin', 'Mara? Elias used to shout the tea order down this tube, you know.'],
+      ['mara', 'Then let\'s give it something better than tea. Who barred those doors?'],
       ['tobin', 'Crane\'s men. They must have watched us row out.'],
       ...urgent(s),
       ['mara', 'You said you were in town Thursday. The night he died.'],
@@ -427,6 +429,20 @@ export const CROSS_ROOM = {
   lamp_lit: { to: 'tobin', line: 'The wheel\'s pulling hard now. She\'s got it lit.', muffled: 'Down the tube, faintly: a whoop. Or a cough.' },
   signalled_truth: { to: 'tobin', line: 'I counted the flashes on the plate. C. R. A... She sent his name.' },
   signalled_sos: { to: 'tobin', line: 'Three short, three long, three short. Someone\'s coming.' },
+  visited_gallery: { to: 'tobin', line: 'Cold air just came down the stair shaft. She\'s opened the gallery door up there.' },
+  visited_wheelroom: { to: 'mara', line: 'Something heavy banged far below, under the cellar. Tobin\'s found the way down to the wheel chamber.' },
+};
+
+// First time each character steps into a side area (ROOMS in rooms.js).
+export const AREA_ENTRY = {
+  gallery: 'Sixty feet of wet iron, then the rocks. The last time I stood out here, I was shouting.',
+  wheelroom: 'Gertie. Elias named the tide wheel Gertie. He said the wheel never lies. It just turns.',
+};
+
+// Said on returning to an area later, in turn.
+export const AREA_RETURN = {
+  gallery: ['The wind tries to take the door out of your hand.', 'Out on the gallery again. You keep one hand on the rail.'],
+  wheelroom: ['The chamber smells of weed and old grease.', 'Gertie creaks in the dark. Hello, Gertie.'],
 };
 
 // Alternate lines for a hotspot once it has nothing new to say. The handler's own line comes
@@ -444,9 +460,25 @@ export const BARKS = {
     when: (s) => s.has('drawer_open'),
     lines: ['Still a pencil stub. Still a compass that won\'t settle.', 'You check under the drawer. Dust. Copy.'],
   },
-  balcony: {
+  rail: {
     when: (s) => s.has('saw_wool'),
     lines: ['The rail is wet and cold. You don\'t look down.', 'Your hand goes to your scarf again. It\'s still there.'],
+  },
+  tally: {
+    when: (s) => s.has('saw_tally'),
+    lines: ['Nine marks. You count them again. Still nine.', 'Scratched with a knife point. Elias\'s knife had a broken tip.'],
+  },
+  mooring: {
+    when: (s) => s.has('saw_rope'),
+    lines: ['Your boat bumps the rocks below. Still there. Good.', 'The cut end of the rope swings in the wind.'],
+  },
+  slate: {
+    when: (s) => s.has('saw_slate'),
+    lines: ['Nine dates. You know some of them by heart now.', 'His chalk, his hand. "Wheel slowed."'],
+  },
+  hook: {
+    when: (s) => s.has('saw_hook'),
+    lines: ['The lantern smells of lamp oil and Sunday mornings.', '"Stay in town." You didn\'t.'],
   },
   chalk: {
     when: (s) => s.has('knows_code'),
@@ -482,7 +514,7 @@ export const BARKS = {
 export const IDLE_MUTTERS = {
   mara: [
     ['Copy. Nobody\'s coming. Fine.', 'The compass still won\'t settle.', 'Wind\'s backing west. Weather coming.'],
-    ['Come on, Tobin.', 'That ship won\'t wait for us.', 'Rain\'s getting in under the balcony door.'],
+    ['Come on, Tobin.', 'That ship won\'t wait for us.', 'Rain\'s getting in under the gallery door.'],
     ['I can\'t see the reef any more.', 'Think, Quell. Think.', 'The Halcyon\'s out there in this.'],
   ],
   tobin: [
@@ -490,6 +522,12 @@ export const IDLE_MUTTERS = {
     ['It\'s at my ankles. That\'s fine. That\'s fine.', 'The pipes are groaning. They never groan.', 'Come on, come on.'],
     ['It\'s past my knees, Mara.', 'He always said the sea gets in everywhere eventually.', 'Don\'t panic. He hated it when I panicked.'],
   ],
+};
+
+// Muttered instead while standing in a side area.
+export const AREA_MUTTERS = {
+  gallery: ['The wind wants this door shut.', 'Don\'t look down, Quell.', 'I can see the whole reef from here. And it can see me.'],
+  wheelroom: ['Gertie\'s groaning. She does that.', 'It\'s colder in here than the cellar. How is that possible?', 'The paddles drip on my neck every time.'],
 };
 
 export const tideBandIndex = (tide) => (tide <= 2 ? 0 : tide <= 4 ? 1 : 2);
@@ -510,6 +548,7 @@ export const LIGHTNING_TEXT = {
   reveal: 'TWO BOATS\nTHURS',
   seen: ['Lightning. For a heartbeat, letters stand out in the salt on the glass, traced by a finger: TWO BOATS THURS.', 'Then dark again. Elias wrote that. It has to be Elias.'],
   missedCellar: 'Lightning. Light flares through the gap under the stair door. Up top, Mara\'s window must be lit like day.',
+  missedGallery: 'Lightning, right overhead. Through the doorway behind you the lamp-room window flares white. Something on the glass?',
   hintWindow: 'Salt streaks on the glass. Something is traced in them, too faint to read in this light. The next flash of lightning might show it.',
 };
 
@@ -527,12 +566,13 @@ const TIDE_LINES = [
   },
 ];
 
-/** Builds the layered ending card: signal sent, tide band, then concealment lines. */
+/** Builds the layered ending card: signal sent, tide band, how the raid went, then concealment lines. */
 export function endingCard(s, id) {
   const truth = id === 'truth';
   const band = s.tideBand ?? s.tide ?? 0;
   const tideLine = TIDE_LINES.find((t) => band <= t.max).text(truth);
-  const concealed = [];
+  const raidLine = RAID_TEXT.ending[s.memo?.raid?.tier];
+  const concealed = raidLine ? [raidLine] : [];
   if (s.has('letter_hidden')) concealed.push('Mara\'s letter stays in her coat. Nobody asks for it.');
   if (s.has('envelope_hidden')) concealed.push('Tobin\'s envelope stays in his pocket. Nobody asks for it.');
   const base = ENDINGS[truth ? 'truth' : 'cover'];

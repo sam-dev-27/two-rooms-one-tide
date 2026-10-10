@@ -13,12 +13,14 @@ find dist -name '.DS_Store' -delete
 find dist -name '.gitkeep' -delete
 # The 3D version ships only the processed, tileable textures, and reads the manifest when marked as a build.
 rm -f dist/assets/3d/*_raw.png
+# Store-page art, uploaded to itch separately.
+rm -f dist/assets/ui/keyart.png dist/assets/ui/cover_630x500.png
 sed -i '' 's/<html lang="en">/<html lang="en" data-build>/' dist/3d.html
 
 # Generated art is 2-5 MB per image. Ship 1280-wide JPEG backgrounds and smaller sprites;
 # Boot picks up the .jpg through the manifest.
 if command -v sips >/dev/null 2>&1; then
-  for f in dist/assets/rooms/*.png dist/assets/ui/*.png dist/assets/cutscene/*.png dist/assets/closeups/*.png; do
+  for f in dist/assets/rooms/*.png dist/assets/ui/*.png dist/assets/cutscene/*.png dist/assets/closeups/*.png dist/assets/visions/*.png; do
     [ -e "$f" ] || continue
     sips -Z 1280 -s format jpeg -s formatOptions 84 "$f" --out "${f%.png}.jpg" >/dev/null || continue
     rm "$f"

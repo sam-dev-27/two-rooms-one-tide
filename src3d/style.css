@@ -437,7 +437,7 @@ body {
 .pause-sub {
   margin: 6px 0 20px;
   font-size: 22px;
-  font-style: italic;
+  font-style: normal;
 }
 
 .pause-grid {
@@ -869,7 +869,7 @@ body {
   margin: 20px 0 0 2px;
   width: 620px;
   font-size: 18px;
-  font-style: italic;
+  font-style: normal;
   line-height: 1.16;
   color: #d9a441;
 }
@@ -1043,7 +1043,7 @@ body {
 .ending-screen-tagline {
   margin: 12px 0 0 4px;
   font-size: 24px;
-  font-style: italic;
+  font-style: normal;
   line-height: 1.16;
   color: #d9a441;
 }

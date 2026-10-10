@@ -48,14 +48,29 @@ function lighthouse(ctx, cx, baseY, scale, lit) {
   ctx.restore();
 }
 
+/** The room and state a room image key stands for: `lamp_after`, or a side area's `images` entry. */
+function roomFor(key) {
+  for (const [id, room] of Object.entries(ROOMS)) {
+    const state = Object.entries(room.images ?? {}).find(([, k]) => k === key)?.[0];
+    if (state) return [id, state];
+  }
+  const [id, state] = key.split('_');
+  return [id, state];
+}
+
 function drawRoom(scene, key) {
-  const [roomId, roomState] = key.split('_');
+  const [roomId, roomState] = roomFor(key);
   const room = ROOMS[roomId];
   const after = roomState === 'after';
   const { tex, ctx } = canvas(scene, key, WIDTH, HEIGHT);
 
   const wall = ctx.createLinearGradient(0, 0, 0, HEIGHT);
-  if (roomId === 'lamp') {
+  if (room.outdoor) {
+    wall.addColorStop(0, '#16222e');
+    wall.addColorStop(0.45, '#22394a');
+    wall.addColorStop(0.46, '#123040');
+    wall.addColorStop(1, '#0a161e');
+  } else if (roomId === 'lamp') {
     wall.addColorStop(0, after ? '#3a3326' : '#1d2b36');
     wall.addColorStop(1, after ? '#1f1a14' : '#0f171e');
   } else {
@@ -82,7 +97,27 @@ function drawRoom(scene, key) {
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
   }
-  if (roomId === 'cellar' && after) {
+  if (roomId === 'wheelroom') {
+    ctx.strokeStyle = 'rgba(120, 90, 60, 0.8)';
+    ctx.lineWidth = 14;
+    ctx.beginPath();
+    ctx.arc(575, 300, 200, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let a = 0; a < Math.PI; a += Math.PI / 6) {
+      ctx.beginPath();
+      ctx.moveTo(575 + Math.cos(a) * 200, 300 + Math.sin(a) * 200);
+      ctx.lineTo(575 - Math.cos(a) * 200, 300 - Math.sin(a) * 200);
+      ctx.stroke();
+    }
+  }
+  if (room.outdoor && after) {
+    const beam = ctx.createLinearGradient(900, 200, 0, 200);
+    beam.addColorStop(0, 'rgba(255, 210, 130, 0.5)');
+    beam.addColorStop(1, 'rgba(255, 210, 130, 0)');
+    ctx.fillStyle = beam;
+    ctx.fillRect(0, 120, 900, 180);
+  }
+  if ((roomId === 'cellar' || roomId === 'wheelroom') && after) {
     ctx.fillStyle = 'rgba(28, 74, 96, 0.78)';
     ctx.fillRect(0, 520, WIDTH, HEIGHT - 520);
     ctx.strokeStyle = 'rgba(170, 220, 235, 0.35)';
@@ -110,9 +145,36 @@ function drawRoom(scene, key) {
   }
 
   ctx.fillStyle = 'rgba(243, 230, 200, 0.18)';
-  ctx.font = `italic 22px ${SERIF}`;
+  ctx.font = `22px ${SERIF}`;
   ctx.textAlign = 'center';
   ctx.fillText(`${room.name}, ${roomState} (placeholder art)`, WIDTH / 2, 80);
+  tex.refresh();
+}
+
+/** A pale coated figure on black (drawn with additive blending, so black is see-through). */
+function drawGhost(scene, key) {
+  const { tex, ctx } = canvas(scene, key, 384, 512);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, 384, 512);
+  const glow = ctx.createRadialGradient(192, 260, 20, 192, 260, 220);
+  glow.addColorStop(0, 'rgba(150, 210, 220, 0.5)');
+  glow.addColorStop(1, 'rgba(150, 210, 220, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, 384, 512);
+  ctx.fillStyle = 'rgba(170, 220, 230, 0.75)';
+  roundRect(ctx, 132, 130, 120, 330, 36);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(192, 100, 38, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(150, 52, 84, 18);
+  if (key.endsWith('point')) {
+    ctx.save();
+    ctx.translate(140, 170);
+    ctx.rotate(-0.25);
+    ctx.fillRect(-120, -14, 130, 28);
+    ctx.restore();
+  }
   tex.refresh();
 }
 
@@ -167,6 +229,54 @@ function drawCharacter(scene, key) {
   ctx.font = `bold 26px ${SERIF}`;
   ctx.textAlign = 'center';
   ctx.fillText(id === 'mara' ? 'Mara' : 'Tobin', 150, 340);
+  tex.refresh();
+}
+
+/** One of Crane's wreckers, facing left with a boathook: standing, climbing or staggering back. */
+function drawWrecker(scene, key) {
+  const pose = key.split('_')[1] ?? 'stand';
+  const { tex, ctx } = canvas(scene, key, 300, 620);
+  ctx.save();
+  ctx.translate(150, 620);
+  if (pose === 'shove') ctx.rotate(0.22);
+  ctx.fillStyle = '#16191b';
+  ctx.fillRect(-42, -170, 32, 165);
+  ctx.fillRect(10, -170, 32, 165);
+  ctx.fillStyle = '#2b2f2a';
+  roundRect(ctx, -72, -460, 144, 310, 34);
+  ctx.fill();
+  ctx.fillStyle = '#4a3b28';
+  ctx.fillRect(-72, -300, 144, 18);
+  ctx.fillStyle = '#c9a487';
+  ctx.beginPath();
+  ctx.arc(-6, -505, 46, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#20232a';
+  ctx.beginPath();
+  ctx.arc(-6, -522, 50, Math.PI, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(-64, -526, 116, 12);
+  ctx.strokeStyle = '#6b5233';
+  ctx.lineWidth = 9;
+  ctx.beginPath();
+  if (pose === 'climb') {
+    ctx.moveTo(-60, -440);
+    ctx.lineTo(-90, -600);
+    ctx.moveTo(60, -440);
+    ctx.lineTo(90, -600);
+  } else {
+    ctx.moveTo(40, -200);
+    ctx.lineTo(-130, -560);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = '#8d949a';
+  ctx.lineWidth = 6;
+  if (pose !== 'climb') {
+    ctx.beginPath();
+    ctx.arc(-138, -548, 16, Math.PI * 0.2, Math.PI * 1.4);
+    ctx.stroke();
+  }
+  ctx.restore();
   tex.refresh();
 }
 
@@ -286,7 +396,7 @@ function drawCloseup(scene, key) {
     }
   }
   ctx.fillStyle = 'rgba(243, 230, 200, 0.2)';
-  ctx.font = `italic 18px ${SERIF}`;
+  ctx.font = `18px ${SERIF}`;
   ctx.textAlign = 'right';
   ctx.fillText('placeholder art', WIDTH - 24, HEIGHT - 20);
   tex.refresh();
@@ -294,7 +404,9 @@ function drawCloseup(scene, key) {
 
 export function makePlaceholder(scene, key, group) {
   if (group === 'room') drawRoom(scene, key);
+  else if (group === 'ghost') drawGhost(scene, key);
   else if (group === 'character') drawCharacter(scene, key);
+  else if (group === 'raider') drawWrecker(scene, key);
   else if (group === 'item' || group === 'prop') drawItem(scene, key);
   else if (group === 'closeup') drawCloseup(scene, key);
   else drawScreen(scene, key);

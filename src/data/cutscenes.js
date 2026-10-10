@@ -52,6 +52,85 @@ export const OPENING = [
   },
 ];
 
+// Captain Hale's flashbacks (GHOSTS in story.js), played as beats with a dreamlike treatment:
+// desaturated, misted edges, a slow push in and handwritten captions. `fallback` is existing art
+// shown in the same treatment if the vision still is missing. None of them names a killer.
+export const VISIONS = {
+  flood: [
+    {
+      image: 'vision_dim',
+      fallback: 'lamp_after',
+      from: { x: 0.5, y: 0.45, zoom: 1.05 },
+      to: { x: 0.48, y: 0.4, zoom: 1.18 },
+      duration: 9000,
+      captions: ['Three years ago. The lamp on Gull Rock burning low and orange, the way somebody wanted it.', 'A careful hand on the rheostat. Then the hand let go.'],
+    },
+    {
+      image: 'vision_marigold',
+      fallback: 'cut_storm',
+      from: { x: 0.5, y: 0.5, zoom: 1.04 },
+      to: { x: 0.56, y: 0.55, zoom: 1.16 },
+      duration: 9000,
+      captions: ['The Marigold came round the reef in the dark, looking for a light that wasn\'t there.', 'On her foredeck a deckhand called Danny Quell was singing. Then the reef.'],
+    },
+  ],
+  stairs: [
+    {
+      image: 'vision_stairs',
+      fallback: 'closeup_bootprints',
+      from: { x: 0.5, y: 0.6, zoom: 1.05 },
+      to: { x: 0.5, y: 0.35, zoom: 1.2 },
+      duration: 10000,
+      captions: ['Thursday night. Boots on the iron stairs, climbing. Later, other boots.', 'A raised voice at the rail. The wind took the words.', 'Then one pair of boots going down, quickly.'],
+    },
+  ],
+  crane: [
+    {
+      image: 'vision_crane',
+      fallback: 'closeup_ledger',
+      from: { x: 0.45, y: 0.5, zoom: 1.04 },
+      to: { x: 0.55, y: 0.48, zoom: 1.18 },
+      duration: 10000,
+      captions: ['The harbour office, the morning after the Marigold. A pen moving down a column.', 'Marigold. Reef. Paid in full.', 'Harbourmaster Crane never set foot on the rock. He never needed to.'],
+    },
+  ],
+  // How Captain Hale died, in his own words. It shows the hand on the light, never whose it was.
+  hale: [
+    {
+      image: 'hale_bridge',
+      fallback: 'cut_storm',
+      from: { x: 0.5, y: 0.5, zoom: 1.04 },
+      to: { x: 0.55, y: 0.46, zoom: 1.14 },
+      duration: 9000,
+      captions: ['Three years ago. I had the Marigold\'s wheel, and Gull Rock Light burning true off the starboard bow.', 'I steered by it, as I had a hundred nights.'],
+    },
+    {
+      image: 'hale_dark',
+      fallback: 'vision_dim',
+      from: { x: 0.5, y: 0.45, zoom: 1.06 },
+      to: { x: 0.5, y: 0.4, zoom: 1.2 },
+      duration: 9000,
+      captions: ['The light was there. Then a hand that knew the lamp turned it down.', 'Not out. Down. Low enough that a tired man doubts his own eyes.'],
+    },
+    {
+      image: 'hale_reef',
+      fallback: 'vision_marigold',
+      from: { x: 0.5, y: 0.55, zoom: 1.05 },
+      to: { x: 0.45, y: 0.6, zoom: 1.18 },
+      duration: 9000,
+      captions: ['Hard over. Too late. The reef opened her like a letter.', 'Thirty-one souls aboard. The water was very cold, and very quick.'],
+    },
+    {
+      image: 'hale_last',
+      fallback: 'cut_lamplit',
+      from: { x: 0.5, y: 0.5, zoom: 1.12 },
+      to: { x: 0.5, y: 0.42, zoom: 1.02 },
+      duration: 9000,
+      captions: ['I held the wheel until there was no ship under it.', 'The last thing I saw was the light coming back up. Full and bright. Too late for anyone.'],
+    },
+  ],
+};
+
 // Short mid-game beats. They return to the game where it left off. `fallback` is shown if the
 // still is missing; with neither, the beat is skipped.
 export const BEATS = {

@@ -21,9 +21,11 @@ export default class CutsceneScene extends Phaser.Scene {
    * `mode: 'opening'` resets the game state and starts `next`. `mode: 'beat'` is a mid-game
    * cutscene: the Game and UI scenes sleep under it and are woken, untouched, when it ends.
    */
-  create({ shots = OPENING, next = 'Game', mode = 'opening' } = {}) {
+  create({ shots = OPENING, next = 'Game', mode = 'opening', style = null } = {}) {
     this.mode = mode;
-    this.shots = shots.map((s) => ({ ...s, image: this.stillFor(s) })).filter((s) => s.image);
+    // `style: 'vision'` is the captain's flashback: drained colour, misted edges, handwritten captions.
+    this.vision = style === 'vision';
+    this.shots = shots.map((s) => ({ ...s, image: this.stillFor(s), ...(this.vision ? { rain: 0 } : {}) })).filter((s) => s.image);
     this.next = next;
     this.index = -1;
     this.done = false;
@@ -34,13 +36,21 @@ export default class CutsceneScene extends Phaser.Scene {
 
     this.drops = Array.from({ length: RAIN_DROPS }, () => this.newDrop(Math.random() * HEIGHT));
     this.rain = this.add.graphics().setDepth(5);
-    this.add.image(0, 0, this.vignette()).setOrigin(0).setDepth(6);
-    this.add.rectangle(0, 0, WIDTH, BAR_H, 0x000000).setOrigin(0).setDepth(10);
-    this.add.rectangle(0, HEIGHT - BAR_H, WIDTH, BAR_H, 0x000000).setOrigin(0).setDepth(10);
+    this.add.image(0, 0, this.vision ? this.mist() : this.vignette()).setOrigin(0).setDepth(6);
+    this.add.rectangle(0, 0, WIDTH, BAR_H, 0x000000, this.vision ? 0.55 : 1).setOrigin(0).setDepth(10);
+    this.add.rectangle(0, HEIGHT - BAR_H, WIDTH, BAR_H, 0x000000, this.vision ? 0.55 : 1).setOrigin(0).setDepth(10);
 
     this.caption = this.add
-      .text(0, 0, '', { fontFamily: FONT, fontSize: '22px', color: COLORS.paperCss, lineSpacing: 6, wordWrap: { width: 1000 } })
+      .text(0, 0, '', {
+        fontFamily: FONT,
+        fontStyle: this.vision ? 'italic' : 'normal',
+        fontSize: this.vision ? '24px' : '22px',
+        color: this.vision ? '#d7eef5' : COLORS.paperCss,
+        lineSpacing: 6,
+        wordWrap: { width: 1000 },
+      })
       .setDepth(11);
+    if (this.vision) this.caption.setShadow(0, 0, '#7fc4d8', 12, false, true);
 
     this.skipBtn = this.add
       .text(WIDTH - 24, BAR_H / 2, 'Skip (Esc)', { fontFamily: FONT, fontSize: '16px', color: COLORS.mutedCss, padding: { x: 12, y: 6 } })
@@ -59,7 +69,8 @@ export default class CutsceneScene extends Phaser.Scene {
     kb.on('keydown-ESC', () => this.finish(true));
 
     sfx.startAmbient();
-    this.cameras.main.fadeIn(700);
+    if (this.vision) sfx.play('vision');
+    this.cameras.main.fadeIn(this.vision ? 1100 : 700, this.vision ? 200 : 0, this.vision ? 225 : 0, this.vision ? 230 : 0);
     this.nextShot();
   }
 
@@ -106,6 +117,22 @@ export default class CutsceneScene extends Phaser.Scene {
     return key;
   }
 
+  /** Pale fog closing in from the edges, for visions. */
+  mist() {
+    const key = 'cut_mist';
+    if (this.textures.exists(key)) return key;
+    const tex = this.textures.createCanvas(key, WIDTH, HEIGHT);
+    const ctx = tex.getContext();
+    const g = ctx.createRadialGradient(WIDTH / 2, HEIGHT / 2, HEIGHT * 0.22, WIDTH / 2, HEIGHT / 2, WIDTH * 0.58);
+    g.addColorStop(0, 'rgba(150,180,188,0)');
+    g.addColorStop(0.6, 'rgba(120,150,160,0.35)');
+    g.addColorStop(1, 'rgba(14,22,26,0.95)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    tex.refresh();
+    return key;
+  }
+
   // ---------- shots ----------
 
   nextShot() {
@@ -116,6 +143,12 @@ export default class CutsceneScene extends Phaser.Scene {
     const prev = this.image;
     const img = this.add.image(0, 0, shot.image).setDepth(this.index * 0.01);
     this.image = img;
+    if (this.vision && img.preFX) {
+      img.preFX.addColorMatrix().saturate(-0.65).brightness(0.95, true);
+      img.preFX.addBlur(1, 1, 1, 0.6);
+    } else if (this.vision) {
+      img.setTint(0xb8c8cc);
+    }
     this.frame(img, shot.from);
     const pan = { t: 0 };
     this.tweens.add({

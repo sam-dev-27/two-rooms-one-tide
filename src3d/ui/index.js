@@ -77,7 +77,7 @@ export function createUI({ state, sfx, hooks = {} }) {
   const gauge = svg('svg', { width: 34, height: 34, viewBox: '-17 -17 34 34', class: 'gauge' }, who);
   const tideLabel = el('span', { cls: 'tide-label', parent: who });
   const objText = text(stage, '', { x: 24, y: OBJ_ROW, oy: 0.5, size: 17, color: AMBER, cls: 'objective' });
-  const revealTip = text(stage, REVEAL_TIP, { x: WIDTH - 16, y: OBJ_ROW, ox: 1, oy: 0.5, size: 15, italic: true, color: MUTED, cls: 'bar-text' });
+  const revealTip = text(stage, REVEAL_TIP, { x: WIDTH - 16, y: OBJ_ROW, ox: 1, oy: 0.5, size: 15, color: MUTED, cls: 'bar-text' });
   revealTip.hidden = true;
   const topButtons = el('div', { cls: 'top-buttons', parent: stage, style: { right: 16, top: TOP_ROW - 17 } });
   const swapBtn = button('', () => state.emit('request-swap'), { size: 17, parent: topButtons, sfx });

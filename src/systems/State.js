@@ -1,5 +1,5 @@
 // Game state with no Phaser dependency, so the puzzle chain can be tested in Node.
-import { CHARACTERS } from '../data/rooms.js';
+import { CHARACTERS, ROOMS } from '../data/rooms.js';
 import { COMBINATIONS, START_ITEMS } from '../data/items.js';
 import { CARDS, COLUMNS, boardReaction } from '../data/board.js';
 import { CROSS_ROOM } from '../data/text.js';
@@ -29,6 +29,7 @@ class Emitter {
 
 // Tips the player has already learned; they survive "Play again".
 const PERSISTENT_SEEN = ['howto', 'space_reveal'];
+const homeAreas = () => Object.fromEntries(Object.entries(CHARACTERS).map(([who, c]) => [who, c.room]));
 
 export class GameState extends Emitter {
   constructor() {
@@ -42,7 +43,10 @@ export class GameState extends Emitter {
     this.inventory = { mara: [...START_ITEMS.mara], tobin: [...START_ITEMS.tobin] };
     this.arrivals = { mara: [], tobin: [] };
     this.roomStates = { lamp: 'before', cellar: 'before' };
+    this.area = homeAreas();
     this.notes = [];
+    this.log = [];
+    this.chapter = null;
     this.seen = new Set([...(this.seen ?? [])].filter((id) => PERSISTENT_SEEN.includes(id)));
     this.selected = null;
     this.modal = false;
@@ -68,8 +72,22 @@ export class GameState extends Emitter {
     return this.active === 'mara' ? 'tobin' : 'mara';
   }
 
+  /** Where the active character is: their main room, or a side area off it. */
   get room() {
-    return CHARACTERS[this.active].room;
+    return this.area[this.active];
+  }
+
+  /** Moves `who` into another area (presentation follows on the 'area' event). */
+  setArea(who, area) {
+    if (!ROOMS[area] || this.area[who] === area) return false;
+    this.area[who] = area;
+    this.emit('area', who, area);
+    return true;
+  }
+
+  /** Both characters back in their main rooms, for the scripted final scene. */
+  homeAll() {
+    this.area = homeAreas();
   }
 
   has(flag) {
@@ -162,6 +180,32 @@ export class GameState extends Emitter {
     if (this.notes.some((n) => n.id === id)) return;
     this.notes.push({ id, text });
     this.emit('notes');
+  }
+
+  // ---- story log: what was said, what was chosen, chapter by chapter ----
+
+  /** Entries: { chapter, kind: 'talk' | 'ghost' | 'vision' | 'narration' | 'choice' | 'chapter', who, text, options, chosen }. */
+  logEntry(entry) {
+    this.log.push({ chapter: this.chapter, ...entry });
+    this.emit('log');
+  }
+
+  logLine(kind, who, text) {
+    this.logEntry({ kind, who, text });
+  }
+
+  /** A choice and every option that was on offer; `chosen` is the index picked. */
+  logChoice(who, title, options, chosen) {
+    this.logEntry({ kind: 'choice', who, text: title, options: [...options], chosen });
+  }
+
+  /** Starts a chapter once; returns false if it had already begun. */
+  beginChapter(id) {
+    if (this.has(`chapter_${id}`)) return false;
+    this.set(`chapter_${id}`);
+    this.chapter = id;
+    this.logEntry({ kind: 'chapter', text: id });
+    return true;
   }
 
   /** Raises the tide; it caps at TIDE_MAX and freezes once the lamp's band is locked. Never a fail state. */

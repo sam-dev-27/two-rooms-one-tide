@@ -1,10 +1,11 @@
 import { WIDTH, HEIGHT, FONT, COLORS } from '../config.js';
-import { ROOMS, CHARACTERS } from '../data/rooms.js';
+import { ROOMS, CHARACTERS, mainRoom } from '../data/rooms.js';
 import { ITEMS } from '../data/items.js';
-import { TWIST_CARD, ENDINGS, endingCard, IDLE_MUTTERS, LIGHTNING_TEXT, tideBandIndex } from '../data/text.js';
-import { BEATS } from '../data/cutscenes.js';
+import { TWIST_CARD, ENDINGS, endingCard, IDLE_MUTTERS, AREA_MUTTERS, LIGHTNING_TEXT, tideBandIndex } from '../data/text.js';
+import { BEATS, VISIONS } from '../data/cutscenes.js';
+import { CAPTAIN } from '../data/story.js';
 import { epilogueLine } from '../data/board.js';
-import { lightningPending, lightningStrike } from '../data/puzzles.js';
+import { lightningPending, lightningStrike, startStory } from '../data/puzzles.js';
 import { state } from '../systems/State.js';
 import { createApi, interact, pendingTalk } from '../systems/Interact.js';
 import { objectiveTarget } from '../systems/Hints.js';
@@ -34,9 +35,20 @@ const ARRIVE_PX = 3;
 // Hotspots whose centre is below this line are examined crouching.
 const LOW_HOTSPOT_Y = 430;
 const POSE_MS = { act: 700, crouch: 950 };
-// A crouch is drawn at its own size, so it is fitted to this fraction of the standing height.
-const CROUCH_H = 0.68;
 const BEAT_DELAY_MS = 1300;
+// Hotspot glow, like the 3D version's warm tint: the painting under a hotspot, multiplied by a
+// warm colour inside a feathered ellipse, added back over itself at low alpha. Bright art is
+// damped when the texture is made, so the lamp and the lit gallery never burn to white.
+const GLOW_PAD = 14;
+const GLOW_WARM = '#ffc27a';
+const GLOW_COOL = '#cfe6ff';
+// [low, high] alpha for each use; the glow breathes slowly between them.
+const GLOW_ALPHA = { hover: [0.3, 0.45], reveal: [0.2, 0.3], shimmer: [0, 0.38], arrow: [0.1, 0.3], hatch: [0.1, 0.38], hold: [0.15, 0.5] };
+const GLOW_PULSE_MS = 1400;
+// Captain Hale: his art faces left; he lingers while his lines are read, then fades.
+const GHOST_FACES = -1;
+const GHOST_LINE_MS = 3200;
+const GHOST_FADE_MS = 1400;
 
 export default class GameScene extends Phaser.Scene {
   constructor() {
@@ -59,9 +71,14 @@ export default class GameScene extends Phaser.Scene {
     this.pose = 'idle';
     this.revealOn = false;
     this.arrowTarget = null;
+    this.ghosts = [];
+    this.ghostShowing = false;
+    this.revealGlows = [];
 
     this.bg = this.add.image(0, 0, this.roomKey()).setOrigin(0);
     this.windowView = this.add.image(0, 0, 'lamp_after').setOrigin(0).setVisible(false);
+    this.door = this.add.graphics();
+    this.doorFront = this.add.image(0, 0, this.roomKey()).setOrigin(0).setVisible(false);
     this.dim = this.add.rectangle(0, 0, WIDTH, HEIGHT, 0x1a0c02, 0.42).setOrigin(0).setVisible(false);
     this.water = this.add.graphics();
     this.plate = this.add.container(0, 0);
@@ -70,23 +87,15 @@ export default class GameScene extends Phaser.Scene {
     this.rain = this.add.graphics();
     this.drops = Array.from({ length: RAIN_DROPS }, () => this.newDrop(true));
     this.flicker = this.add.rectangle(0, 0, WIDTH, HEIGHT, 0x05070a, 0).setOrigin(0);
-    this.hatchGlow = this.add.graphics();
-    this.holdGlow = this.add.graphics();
+    this.hatchGlow = null;
+    this.holdGlow = null;
     this.character = this.add.image(0, 0, state.active).setOrigin(0.5, 1);
     this.legs = this.add.image(0, 0, state.active).setOrigin(0.5, 1).setTint(0x4a7d8f).setAlpha(0.22).setVisible(false);
     this.ripple = this.add.graphics().setVisible(false);
     this.rippleRing = this.add.graphics().setVisible(false);
     this.revealLayer = this.add.container(0, 0).setAlpha(0);
-    this.hoverGfx = this.add.graphics();
-    this.hoverLabel = this.add
-      .text(0, 0, '', {
-        fontFamily: FONT,
-        fontSize: '20px',
-        color: COLORS.paperCss,
-        backgroundColor: 'rgba(7,11,16,0.8)',
-        padding: { x: 10, y: 5 },
-      })
-      .setVisible(false);
+    this.hoverGlow = null;
+    this.hoverLabel = this.floatingLabel(16).setVisible(false);
     this.lightning = this.add.rectangle(0, 0, WIDTH, HEIGHT, 0xeef4ff, 0).setOrigin(0).setDepth(20);
     this.reveal = this.add
       .text(0, 0, LIGHTNING_TEXT.reveal, { fontFamily: FONT, fontSize: '30px', fontStyle: 'italic bold', color: '#e8f2f6', align: 'center', lineSpacing: 10 })
@@ -114,13 +123,15 @@ export default class GameScene extends Phaser.Scene {
     const kb = this.input.keyboard;
     kb.addCapture('TAB,SPACE');
     kb.on('keydown-TAB', () => this.swap());
-    kb.on('keydown-L', () => this.toggleLayoutMode());
+    kb.on('keydown-F2', () => this.toggleLayoutMode());
+    kb.on('keydown-ESC', () => this.ghostAdvance?.());
     this.keys = kb.addKeys({ a: 'A', d: 'D', left: 'LEFT', right: 'RIGHT' });
     for (const k of ['SPACE', 'SHIFT']) {
       kb.on(`keydown-${k}`, () => this.showReveal(true));
       kb.on(`keyup-${k}`, () => this.showReveal(false));
     }
     this.input.on('pointerdown', (p, over) => {
+      if (this.ghostAdvance) return this.ghostAdvance();
       if (over.length || p.rightButtonDown() || !this.playing || state.modal || this.busy || this.layoutMode) return;
       if (!this.canWalk()) return;
       this.walkTo(p.x);
@@ -154,8 +165,18 @@ export default class GameScene extends Phaser.Scene {
         this.api.toast('look', 'look');
         this.introduceRoom();
       };
-      if (state.seen.has('howto')) begin();
-      else this.ui.howTo(begin);
+      startStory(this.api, () => (state.seen.has('howto') ? begin() : this.ui.howTo(begin)));
+    });
+  }
+
+  /** A small dark name tag, like the 3D version's label under the crosshair. */
+  floatingLabel(size) {
+    return this.add.text(0, 0, '', {
+      fontFamily: FONT,
+      fontSize: `${size}px`,
+      color: COLORS.paperCss,
+      backgroundColor: 'rgba(7, 11, 16, 0.8)',
+      padding: { x: Math.round(size * 0.55), y: Math.round(size * 0.2) },
     });
   }
 
@@ -168,9 +189,11 @@ export default class GameScene extends Phaser.Scene {
     if (!this.playing) return;
     if (this.revealOn && (state.modal || this.busy)) this.showReveal(false);
     this.updateWalk(delta);
+    this.placeHoverLabel();
     this.updateAtmosphere(time, delta);
     this.updateLightning(delta);
     this.updateIdle();
+    this.updateGhosts();
   }
 
   // ---------- walking ----------
@@ -285,9 +308,10 @@ export default class GameScene extends Phaser.Scene {
   // ---------- reactive world: idle mutters, lightning, tide atmosphere ----------
 
   updateIdle() {
-    if (this.busy || state.modal || state.holding || this.ui.showing || state.has('final_phase')) return;
+    if (this.busy || state.modal || state.holding || this.ui.showing || this.ghostShowing || state.has('final_phase')) return;
     if (Date.now() - state.lastInputAt < IDLE_MS) return;
-    const pool = IDLE_MUTTERS[state.active][tideBandIndex(state.tide)].filter((l) => l !== this.lastMutter);
+    const lines = AREA_MUTTERS[state.room] ?? IDLE_MUTTERS[state.active][tideBandIndex(state.tide)];
+    const pool = lines.filter((l) => l !== this.lastMutter);
     this.lastMutter = pool[Math.floor(Math.random() * pool.length)];
     state.noteInput();
     this.ui.say(`"${this.lastMutter}"`);
@@ -310,13 +334,14 @@ export default class GameScene extends Phaser.Scene {
   /** A lightning flash and thunder. While the window writing is unseen, it shows on Mara's glass. */
   strike(reveal = lightningPending(this.api)) {
     const lamp = state.room === 'lamp';
+    const bright = lamp || ROOMS[state.room].outdoor;
     this.tweens.killTweensOf(this.lightning);
     this.tweens.chain({
       targets: this.lightning,
       tweens: [
-        { alpha: lamp ? 0.7 : 0.35, duration: 40 },
+        { alpha: bright ? 0.7 : 0.35, duration: 40 },
         { alpha: 0, duration: 140 },
-        { alpha: lamp ? 0.45 : 0.2, duration: 40, delay: 90 },
+        { alpha: bright ? 0.45 : 0.2, duration: 40, delay: 90 },
         { alpha: 0, duration: 420 },
       ],
     });
@@ -330,21 +355,32 @@ export default class GameScene extends Phaser.Scene {
     }
     this.time.delayedCall(600, () => {
       const result = lightningStrike(this.api);
-      if (result === 'missed' && state.markSeen('lightning_missed')) this.ui.say(LIGHTNING_TEXT.missedCellar);
+      if (result !== 'missed') return;
+      if (state.active === 'mara') {
+        if (state.markSeen('lightning_missed_gallery')) this.ui.say(LIGHTNING_TEXT.missedGallery);
+      } else if (state.markSeen('lightning_missed')) {
+        this.ui.say(LIGHTNING_TEXT.missedCellar);
+      }
     });
   }
 
+  /** Where rain falls: the lamp-room window, or the whole sky outdoors. */
+  rainArea() {
+    return ROOMS[state.room].outdoor ? { x: 0, y: 0, w: WIDTH, h: HEIGHT } : ROOMS.lamp.window;
+  }
+
   newDrop(anywhere = false) {
-    const w = ROOMS.lamp.window;
+    const w = this.rainArea();
     return { x: w.x + Math.random() * (w.w + 60), y: anywhere ? w.y + Math.random() * w.h : w.y - 20, len: 10 + Math.random() * 14, speed: 600 + Math.random() * 500 };
   }
 
-  /** Rain on the lamp-room glass, a guttering light and a slow sway, all growing with the tide. */
+  /** Rain on the lamp-room glass (or everywhere outside), a guttering light and a slow sway, all growing with the tide. */
   updateAtmosphere(time, delta) {
     const level = state.tide / 6;
     const lamp = state.room === 'lamp';
+    const outdoor = !!ROOMS[state.room].outdoor;
     const cam = this.cameras.main;
-    const sway = (lamp ? 2.6 : 1.2) * level;
+    const sway = (lamp || outdoor ? 2.6 : 1.2) * level;
     cam.setScroll(Math.sin(time / 1900) * sway, Math.sin(time / 1300) * sway * 0.5);
 
     if (!this.flickerAt || time > this.flickerAt) {
@@ -355,8 +391,8 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.rain.clear();
-    if (!lamp) return;
-    const w = ROOMS.lamp.window;
+    if (!lamp && !outdoor) return;
+    const w = this.rainArea();
     const dt = delta / 1000;
     const shown = Math.round(RAIN_DROPS * (0.3 + level * 0.7));
     this.rain.lineStyle(1, 0xcfe3ee, 0.18 + level * 0.3);
@@ -417,22 +453,59 @@ export default class GameScene extends Phaser.Scene {
           this.playBeat(id, then);
         });
       },
+      raid: (onResult) => this.playRaid(onResult),
       ending: (id, onDone) => this.showEnding(id, onDone),
       end: (id) => this.endGame(id),
+      goTo: (area, from) => this.enterArea(area, from),
+      effect: (name) => this.playEffect(name),
+      ghost: (appearance) => this.queueGhost(appearance),
+      chapter: (def, then) => this.ui.chapterCard(def, then),
     };
   }
 
   /** Speaking into the tube: face the hatch in the talk pose until the conversation ends. */
   talkPose() {
     const hatch = ROOMS[state.room].hotspots.find((h) => h.handler === 'hatch');
-    const dx = hatch.x + hatch.w / 2 - this.charX;
-    if (Math.abs(dx) > 4) this.facing[state.active] = Math.sign(dx);
+    if (hatch) {
+      const dx = hatch.x + hatch.w / 2 - this.charX;
+      if (Math.abs(dx) > 4) this.facing[state.active] = Math.sign(dx);
+    }
     this.strikePose('talk');
   }
 
   // ---------- room rendering ----------
 
+  /** The state (before/after) of the main room an area belongs to. */
+  roomState(room = state.room) {
+    return state.roomStates[mainRoom(room)];
+  }
+
+  /** True when an image loaded for real (not a generated placeholder). */
+  realTexture(key) {
+    return !!key && this.textures.exists(key) && !this.registry.get('missing')?.has(key);
+  }
+
+  /** Whether the cellar paintings with the floor hatch are present (otherwise: drawn iron door). */
+  hatchArt() {
+    return this.realTexture(ROOMS.cellar.hatchArt.closed);
+  }
+
+  /** Hotspots that exist right now: their `visibleIf` holds and any art they need is loaded. */
+  hotspotShown(hs) {
+    if (hs.visibleIf && !hs.visibleIf(state)) return false;
+    if (hs.art && !this.realTexture(hs.art)) return false;
+    if (hs.noArt && this.realTexture(hs.noArt)) return false;
+    return true;
+  }
+
   roomKey(room = state.room) {
+    if (room === 'cellar' && this.hatchArt()) {
+      const art = ROOMS.cellar.hatchArt;
+      if (state.roomStates.cellar === 'after') return this.realTexture(art.flooded) ? art.flooded : 'cellar_after';
+      return state.has('hatch_open') && this.realTexture(art.open) ? art.open : art.closed;
+    }
+    const images = ROOMS[room].images;
+    if (images) return images[this.roomState(room)] ?? images.before;
     if (room === 'lamp' && state.roomStates.lamp === 'before' && state.tide <= 1 && this.textures.exists('lamp_lowtide')) {
       return 'lamp_lowtide';
     }
@@ -441,6 +514,9 @@ export default class GameScene extends Phaser.Scene {
 
   renderRoom() {
     this.bg.setTexture(this.roomKey()).setDisplaySize(WIDTH, HEIGHT);
+    const { minX, maxX } = this.floor();
+    this.pos[state.active] = Phaser.Math.Clamp(this.charX, minX, maxX);
+    this.drops = Array.from({ length: RAIN_DROPS }, () => this.newDrop(true));
     this.wadeTween?.remove();
     this.wadeTween = null;
     this.walk = null;
@@ -474,7 +550,8 @@ export default class GameScene extends Phaser.Scene {
     if (dim) this.bg.setTint(0xffb27a);
     else this.bg.clearTint();
 
-    this.drawWater(cellar && !state.has('valves_set'));
+    this.drawDoor(cellar && !this.hatchArt());
+    this.drawWater(!!ROOMS[room].tideWade && this.roomState(room) === 'before');
     this.drawPlate(cellar);
 
     const rh = ROOMS.cellar.hotspots.find((h) => h.id === 'rheostat');
@@ -491,15 +568,140 @@ export default class GameScene extends Phaser.Scene {
   }
 
   drawHoldGlow() {
-    this.tweens.killTweensOf(this.holdGlow);
-    this.holdGlow.clear().setAlpha(1);
+    this.dropGlow(this.holdGlow);
+    this.holdGlow = null;
     const hold = state.holding;
     if (!hold) return;
     const target = state.room === 'cellar' ? 'rheostat' : state.room === 'lamp' ? 'lamp' : null;
     const hs = ROOMS[state.room].hotspots.find((h) => h.id === target);
     if (!hs) return;
-    this.holdGlow.lineStyle(4, 0xfff1c4, 1).strokeRoundedRect(hs.x, hs.y, hs.w, hs.h, 14);
-    this.tweens.add({ targets: this.holdGlow, alpha: 0.2, duration: 320, yoyo: true, repeat: -1 });
+    this.holdGlow = this.addGlow(hs, { color: GLOW_COOL });
+    this.pulseGlow(this.holdGlow, GLOW_ALPHA.hold, 320);
+  }
+
+  // ---------- hotspot glow ----------
+
+  /**
+   * A texture of the painting under `hs`, multiplied by `color` and faded out in an ellipse that
+   * fits the hotspot. Added over the room at low alpha it reads as the object catching warm light.
+   */
+  glowTexture(hs, color = GLOW_WARM) {
+    const bgKey = this.bg.texture.key;
+    const key = `glow2:${bgKey}:${hs.x},${hs.y},${hs.w},${hs.h}:${color}`;
+    if (this.textures.exists(key)) return key;
+    const w = Math.round(hs.w + GLOW_PAD * 2);
+    const h = Math.round(hs.h + GLOW_PAD * 2);
+    const tex = this.textures.createCanvas(key, w, h);
+    const ctx = tex.getContext();
+    // The painting under it, scaled from the source image to game pixels.
+    const src = this.bg.texture.getSourceImage();
+    const kx = src.width / WIDTH;
+    const ky = src.height / HEIGHT;
+    const sx = Math.max(0, hs.x - GLOW_PAD);
+    const sy = Math.max(0, hs.y - GLOW_PAD);
+    const ex = Math.min(WIDTH, hs.x + hs.w + GLOW_PAD);
+    const ey = Math.min(HEIGHT, hs.y + hs.h + GLOW_PAD);
+    ctx.drawImage(src, sx * kx, sy * ky, (ex - sx) * kx, (ey - sy) * ky, sx - (hs.x - GLOW_PAD), sy - (hs.y - GLOW_PAD), ex - sx, ey - sy);
+    const px = ctx.getImageData(0, 0, w, h).data;
+    let lum = 0;
+    for (let i = 0; i < px.length; i += 16) lum += (px[i] * 0.3 + px[i + 1] * 0.59 + px[i + 2] * 0.11) / 255;
+    lum /= Math.max(1, px.length / 16);
+    // Warm the colours, and lift dark corners a little so a shadowed object still shows.
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = color;
+    ctx.globalAlpha = Phaser.Math.Clamp(0.32 - lum * 0.5, 0, 0.25);
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalAlpha = 1;
+    // Feathered ellipse matching the hotspot's proportions; bright art gets a weaker glow.
+    const strength = Phaser.Math.Clamp(1.25 - lum * 1.1, 0.45, 1);
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    ctx.scale(w / 2, h / 2);
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    g.addColorStop(0, `rgba(0,0,0,${strength})`);
+    g.addColorStop(0.55, `rgba(0,0,0,${strength * 0.8})`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(-1, -1, 2, 2);
+    ctx.restore();
+    ctx.globalCompositeOperation = 'source-over';
+    tex.refresh();
+    return key;
+  }
+
+  /** An additive glow over a hotspot, under the character. */
+  addGlow(hs, { color = GLOW_WARM, alpha = 0 } = {}) {
+    const img = this.add
+      .image(hs.x - GLOW_PAD, hs.y - GLOW_PAD, this.glowTexture(hs, color))
+      .setOrigin(0)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setAlpha(alpha);
+    this.children.moveBelow(img, this.character);
+    return img;
+  }
+
+  /** Breathes a glow slowly between `[lo, hi]` alpha. */
+  pulseGlow(img, [lo, hi], duration = GLOW_PULSE_MS) {
+    this.tweens.add({ targets: img, alpha: { from: lo, to: hi }, duration, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+    return img;
+  }
+
+  dropGlow(img) {
+    if (!img) return;
+    this.tweens.killTweensOf(img);
+    img.destroy();
+  }
+
+  /** Iron door to the wheel chamber, drawn on the cellar's side wall with the painted crate redrawn in front. */
+  drawDoor(show) {
+    this.door.clear();
+    const d = ROOMS.cellar.door;
+    this.doorFront.setVisible(show && !!d);
+    if (!show || !d) return;
+    const { x, y, w, h } = d;
+    const skew = 18;
+    const pts = [
+      { x, y: y + skew },
+      { x: x + w, y },
+      { x: x + w, y: y + h },
+      { x, y: y + h - skew * 0.6 },
+    ];
+    this.door.fillStyle(0x0b1013, 0.55).fillPoints(pts.map((p) => ({ x: p.x - 8, y: p.y + 6 })), true);
+    this.door.fillStyle(0x253033, 1).fillPoints(pts, true);
+    // Lamp light from the left falls off toward the hinge side and the floor.
+    const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    for (let i = 0; i < 6; i++) {
+      const [a, b] = [i / 6, (i + 1) / 6];
+      const band = [lerp(pts[0], pts[1], a), lerp(pts[0], pts[1], b), lerp(pts[3], pts[2], b), lerp(pts[3], pts[2], a)];
+      this.door.fillStyle(0x6b7f86, 0.2 * (1 - a)).fillPoints(band, true);
+    }
+    for (let i = 0; i < 5; i++) {
+      const t = 0.55 + i * 0.09;
+      this.door.fillStyle(0x05080a, 0.12).fillPoints([lerp(pts[0], pts[3], t), lerp(pts[1], pts[2], t), pts[2], pts[3]], true);
+    }
+    this.door.fillStyle(0x7a4a26, 0.35);
+    for (const s of [0.18, 0.46, 0.83]) {
+      const top = lerp(pts[0], pts[1], s);
+      this.door.fillRect(top.x - 2, top.y + h * 0.2, 4 + s * 3, h * (0.25 + s * 0.2));
+    }
+    this.door.lineStyle(5, 0x111719, 1).strokePoints(pts, true);
+    this.door.lineStyle(2, 0x5d6b70, 0.6);
+    for (const t of [0.22, 0.5, 0.78]) {
+      this.door.lineBetween(x + 6, y + skew + (h - skew * 1.6) * t, x + w - 6, y + h * t);
+    }
+    this.door.fillStyle(0x8a7350, 0.9);
+    for (const t of [0.12, 0.88]) for (const s of [0.1, 0.9]) this.door.fillCircle(x + w * s, y + skew * (1 - s) + h * t, 3.5);
+    this.door.lineStyle(4, 0x8a6a3a, 1).strokeCircle(x + w * 0.72, y + h * 0.48, 13);
+    this.door.lineBetween(x + w * 0.72 - 13, y + h * 0.48, x + w * 0.72 + 13, y + h * 0.48);
+    this.door.lineBetween(x + w * 0.72, y + h * 0.48 - 13, x + w * 0.72, y + h * 0.48 + 13);
+    const f = d.front;
+    const src = this.bg.texture.getSourceImage();
+    const k = src.width / WIDTH;
+    this.doorFront.setTexture(this.bg.texture.key).setDisplaySize(WIDTH, HEIGHT).setCrop(f.x * k, f.y * k, f.w * k, f.h * k);
   }
 
   drawWater(show) {
@@ -562,11 +764,11 @@ export default class GameScene extends Phaser.Scene {
     if (full) {
       // The rim's soot writing, thrown down the well mirrored.
       const soot = this.add
-        .text(cx + 12, y + 12, 'IF I FALL\nIT WAS —', {
+        .text(cx + 12, y + 10, 'IF I FALL\nIT WAS —', {
           fontFamily: FONT,
           fontSize: '17px',
           color: '#1c1610',
-          fontStyle: 'bold',
+          fontStyle: 'italic bold',
           align: 'left',
           lineSpacing: 2,
         })
@@ -581,19 +783,19 @@ export default class GameScene extends Phaser.Scene {
   }
 
   drawHatchGlow() {
-    this.tweens.killTweensOf(this.hatchGlow);
-    this.hatchGlow.clear().setAlpha(1);
     const calling = state.has('final_phase') ? state.has('final_plate') && !state.has('final_seen') : !!pendingTalk(this.api);
-    if (!calling) return;
-    const hs = ROOMS[state.room].hotspots.find((h) => h.handler === 'hatch');
-    this.hatchGlow.fillStyle(COLORS.amber, 0.16).fillRoundedRect(hs.x, hs.y, hs.w, hs.h, 12);
-    this.hatchGlow.lineStyle(3, COLORS.amber, 0.95).strokeRoundedRect(hs.x, hs.y, hs.w, hs.h, 12);
-    this.tweens.add({ targets: this.hatchGlow, alpha: 0.25, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+    const hs = calling && ROOMS[state.room].hotspots.find((h) => h.handler === 'hatch');
+    if (this.hatchGlow?.active && this.hatchGlow.hotspot === hs) return;
+    this.dropGlow(this.hatchGlow);
+    this.hatchGlow = null;
+    if (!hs) return;
+    this.hatchGlow = this.pulseGlow(this.addGlow(hs), GLOW_ALPHA.hatch, 750);
+    this.hatchGlow.hotspot = hs;
   }
 
   onFlag() {
     // Modals set flags outside a hotspot click, so conditional hotspots are rebuilt here too.
-    if (ROOMS[state.room].hotspots.some((h) => h.visibleIf && h.visibleIf(state) !== this.zones.some((z) => z.hotspot === h))) {
+    if (ROOMS[state.room].hotspots.some((h) => this.hotspotShown(h) !== this.zones.some((z) => z.hotspot === h))) {
       this.buildHotspots();
     }
     this.renderOverlays();
@@ -605,7 +807,7 @@ export default class GameScene extends Phaser.Scene {
     sfx.setStorm(state.tide / 6);
     if (state.room === 'lamp' && state.roomStates.lamp === 'before') this.bg.setTexture(this.roomKey()).setDisplaySize(WIDTH, HEIGHT);
     this.renderOverlays();
-    if (state.room === 'cellar' && !this.wadeTween) this.riseWater(900, this.wadeDepth);
+    if (ROOMS[state.room].tideWade && !this.wadeTween) this.riseWater(900, this.wadeDepth);
     this.api.toast('tide', 'tide');
   }
 
@@ -638,13 +840,14 @@ export default class GameScene extends Phaser.Scene {
 
   /**
    * Walk and talk frames are scaled to the idle pose's on-screen height, since the cutouts
-   * trim differently; a crouch to CROUCH_H of it. Act art shares the idle framing and scale.
+   * trim differently; a crouch to the character's `crouchH` of it, so heads match. Act art shares
+   * the idle framing and scale.
    */
   poseScale(key, pose) {
     const { h } = ROOMS[state.room].char;
     const idle = h / this.textures.get(state.active).getSourceImage().height;
     if (key === state.active || pose === 'act') return idle;
-    return (h * (pose === 'crouch' ? CROUCH_H : 1)) / this.textures.get(key).getSourceImage().height;
+    return (h * (pose === 'crouch' ? CHARACTERS[state.active].crouchH : 1)) / this.textures.get(key).getSourceImage().height;
   }
 
   /** Whether a pose's art must be mirrored to face the current direction. Idle is never flipped. */
@@ -692,7 +895,7 @@ export default class GameScene extends Phaser.Scene {
 
   waterDepth(room = state.room) {
     const r = ROOMS[room];
-    const roomState = state.roomStates[room];
+    const roomState = this.roomState(room);
     if (r.wade?.[roomState] !== undefined) return r.wade[roomState];
     return (r.tideWade ?? 0) * state.tide;
   }
@@ -769,7 +972,7 @@ export default class GameScene extends Phaser.Scene {
     this.zones = [];
     this.clearHover();
     for (const hs of ROOMS[state.room].hotspots) {
-      if (hs.visibleIf && !hs.visibleIf(state)) continue;
+      if (!this.hotspotShown(hs)) continue;
       const zone = this.add.zone(hs.x, hs.y, hs.w, hs.h).setOrigin(0).setInteractive({ useHandCursor: true });
       zone.hotspot = hs;
       zone.on('pointerover', () => {
@@ -789,33 +992,33 @@ export default class GameScene extends Phaser.Scene {
   }
 
   revealPulse(hs) {
-    const ring = this.add.graphics();
-    ring.lineStyle(4, COLORS.amber, 1).strokeRoundedRect(hs.x, hs.y, hs.w, hs.h, 12);
-    this.tweens.add({ targets: ring, alpha: 0, duration: 700, yoyo: true, repeat: 2, onComplete: () => ring.destroy() });
+    const glow = this.addGlow(hs);
+    this.tweens.add({ targets: glow, alpha: GLOW_ALPHA.shimmer[1], duration: 700, yoyo: true, repeat: 2, ease: 'Sine.InOut', onComplete: () => glow.destroy() });
   }
 
   hover(hs) {
     if (state.modal || this.busy || this.layoutMode) return;
-    this.hoverGfx.clear();
-    this.hoverGfx.fillStyle(COLORS.amber, 0.08).fillRoundedRect(hs.x, hs.y, hs.w, hs.h, 12);
-    this.hoverGfx.lineStyle(3, COLORS.amber, 0.9).strokeRoundedRect(hs.x, hs.y, hs.w, hs.h, 12);
-    this.tweens.killTweensOf(this.hoverGfx);
-    this.hoverGfx.setAlpha(1);
-    this.tweens.add({ targets: this.hoverGfx, alpha: 0.55, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+    this.dropGlow(this.hoverGlow);
+    this.hoverGlow = this.pulseGlow(this.addGlow(hs), GLOW_ALPHA.hover);
 
     const label = state.selected ? `Use ${ITEMS[state.selected].name.toLowerCase()} on ${hs.label.toLowerCase()}` : hs.label;
-    const above = hs.y > 110;
-    this.hoverLabel
-      .setText(label)
-      .setOrigin(0.5, above ? 1 : 0)
-      .setPosition(Phaser.Math.Clamp(hs.x + hs.w / 2, 140, WIDTH - 140), above ? hs.y - 8 : hs.y + hs.h + 8)
-      .setVisible(true);
+    this.hoverLabel.setText(label).setOrigin(0.5, 0).setVisible(!this.revealOn);
+    this.placeHoverLabel();
+    this.children.bringToTop(this.hoverLabel);
+  }
+
+  /** The hover tag sits just under the pointer, like the 3D label under the crosshair. */
+  placeHoverLabel() {
+    if (!this.hoverLabel.visible) return;
+    const p = this.input.activePointer;
+    const half = this.hoverLabel.width / 2 + 8;
+    this.hoverLabel.setPosition(Phaser.Math.Clamp(Math.round(p.x), half, WIDTH - half), Math.round(Math.min(p.y + 26, 600)));
   }
 
   clearHover() {
-    this.tweens.killTweensOf(this.hoverGfx);
-    this.hoverGfx.clear();
-    this.hoverLabel.setVisible(false);
+    this.dropGlow(this.hoverGlow);
+    this.hoverGlow = null;
+    this.hoverLabel?.setVisible(false);
   }
 
   /** Walks over to a hotspot, then uses it (with the item selected at click time, if any). */
@@ -850,56 +1053,53 @@ export default class GameScene extends Phaser.Scene {
     if (on === this.revealOn) return;
     this.revealOn = on;
     this.tweens.killTweensOf(this.revealLayer);
+    for (const glow of this.revealGlows) this.tweens.killTweensOf(glow);
     if (!on) {
-      this.tweens.add({ targets: this.revealLayer, alpha: 0, duration: 300 });
+      this.tweens.add({ targets: [this.revealLayer, ...this.revealGlows], alpha: 0, duration: 300 });
       return;
     }
     state.markSeen('space_reveal');
+    this.hoverLabel.setVisible(false);
     this.revealLayer.removeAll(true);
-    const g = this.add.graphics();
-    this.revealLayer.add(g);
+    this.revealGlows.forEach((g) => g.destroy());
+    this.revealGlows = this.zones.map(({ hotspot: hs }) => this.addGlow(hs));
     for (const { hotspot: hs } of this.zones) {
-      g.fillStyle(0xfff1c4, 0.08).fillRoundedRect(hs.x, hs.y, hs.w, hs.h, 12);
-      g.lineStyle(2, 0xfff1c4, 0.85).strokeRoundedRect(hs.x, hs.y, hs.w, hs.h, 12);
-      const label = this.add
-        .text(Phaser.Math.Clamp(hs.x + hs.w / 2, 90, WIDTH - 90), Math.max(hs.y + hs.h / 2, 92), hs.label, {
-          fontFamily: FONT,
-          fontSize: '17px',
-          color: COLORS.paperCss,
-          backgroundColor: 'rgba(7,11,16,0.78)',
-          padding: { x: 8, y: 3 },
-        })
+      const label = this.floatingLabel(14)
+        .setText(hs.label)
+        .setPosition(Phaser.Math.Clamp(hs.x + hs.w / 2, 80, WIDTH - 80), Math.max(hs.y + hs.h / 2, 92))
         .setOrigin(0.5);
       this.revealLayer.add(label);
     }
     this.children.bringToTop(this.revealLayer);
     this.tweens.add({ targets: this.revealLayer, alpha: 1, duration: 150 });
+    for (const glow of this.revealGlows) this.pulseGlow(glow, GLOW_ALPHA.reveal);
   }
 
   /** First visit to a room: hotspots shimmer once, and an arrow points at the objective's hotspot. */
   introduceRoom() {
     if (!this.playing || !state.markSeen(`visit_${state.room}`)) return;
     this.zones.forEach(({ hotspot: hs }, i) => {
-      const g = this.add.graphics().setAlpha(0);
-      g.fillStyle(0xfff1c4, 0.1).fillRoundedRect(hs.x, hs.y, hs.w, hs.h, 12);
-      g.lineStyle(2, 0xfff1c4, 0.9).strokeRoundedRect(hs.x, hs.y, hs.w, hs.h, 12);
-      this.tweens.add({ targets: g, alpha: 1, duration: 280, delay: 250 + i * 140, hold: 120, yoyo: true, onComplete: () => g.destroy() });
+      const glow = this.addGlow(hs);
+      this.tweens.add({ targets: glow, alpha: GLOW_ALPHA.shimmer[1], duration: 420, delay: 250 + i * 140, hold: 160, yoyo: true, ease: 'Sine.InOut', onComplete: () => glow.destroy() });
     });
     const target = objectiveTarget(state);
     if (target) this.time.delayedCall(450 + this.zones.length * 140, () => this.pointArrow(target));
   }
 
+  /** Points at the objective's hotspot; if it is in the main room, at the way back there instead. */
   pointArrow(id) {
     this.clearArrow();
-    const hs = this.zones.find((z) => z.hotspot.id === id)?.hotspot;
+    let hs = this.zones.find((z) => z.hotspot.id === id)?.hotspot;
+    if (!hs && ROOMS[state.room].main) hs = this.zones.find((z) => z.hotspot.to === ROOMS[state.room].main)?.hotspot;
     if (!hs || state.has('final_phase')) return;
     const below = hs.y < 110;
     const g = this.add.graphics();
-    g.fillStyle(COLORS.amber, 1).fillTriangle(-15, -26, 15, -26, 0, 0);
-    g.lineStyle(2, 0x10161b, 0.85).strokeTriangle(-15, -26, 15, -26, 0, 0);
+    g.fillStyle(COLORS.amber, 1).fillTriangle(-13, -22, 13, -22, 0, 0);
+    g.lineStyle(2, 0x10161b, 0.85).strokeTriangle(-13, -22, 13, -22, 0, 0);
     g.setPosition(hs.x + hs.w / 2, below ? hs.y + hs.h + 8 : hs.y - 6).setAngle(below ? 180 : 0);
     this.tweens.add({ targets: g, y: g.y + (below ? 12 : -12), duration: 420, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
     this.arrow = g;
+    this.arrowGlow = this.pulseGlow(this.addGlow(hs), GLOW_ALPHA.arrow);
     this.arrowTarget = id;
   }
 
@@ -907,17 +1107,21 @@ export default class GameScene extends Phaser.Scene {
     if (!this.arrow) return;
     this.tweens.killTweensOf(this.arrow);
     this.arrow.destroy();
+    this.dropGlow(this.arrowGlow);
     this.arrow = null;
+    this.arrowGlow = null;
     this.arrowTarget = null;
   }
 
   // ---------- cutscene beats ----------
 
-  /** Fades out, sleeps Game and UI under a CutsceneScene beat, and carries on where it left off. */
-  playBeat(id, onDone) {
+  /**
+   * Fades out, sleeps Game and UI under a CutsceneScene beat, and carries on where it left off.
+   * `shots` and `style` override BEATS[id], for the captain's visions.
+   */
+  playBeat(id, onDone, { shots = BEATS[id], style = null } = {}) {
     const missing = this.registry.get('missing');
     const real = (k) => k && this.textures.exists(k) && !missing.has(k);
-    const shots = BEATS[id];
     if (!shots?.some((s) => real(s.image) || real(s.fallback))) return onDone?.();
     const wasBusy = this.busy;
     const wasModal = state.modal;
@@ -934,7 +1138,7 @@ export default class GameScene extends Phaser.Scene {
         state.modal = wasModal;
         onDone?.();
       };
-      this.scene.launch('Cutscene', { shots, mode: 'beat' });
+      this.scene.launch('Cutscene', { shots, mode: 'beat', style });
       this.scene.sleep('UI');
       this.scene.sleep();
     });
@@ -948,6 +1152,149 @@ export default class GameScene extends Phaser.Scene {
     const done = this.beatDone;
     this.beatDone = null;
     done?.();
+  }
+
+  // ---------- Captain Hale ----------
+
+  /** Automation skips visions and hurries the captain along. */
+  fastStory() {
+    return window.__fastStory ?? navigator.webdriver === true;
+  }
+
+  queueGhost(appearance) {
+    this.ghosts.push(appearance);
+  }
+
+  /** True while an appearance (or its vision) is waiting to play where the player is now. */
+  ghostPending() {
+    return !!this.pendingVision || this.ghostShowing || this.ghosts.some((g) => g.who === state.active && g.area === state.room && !state.has('final_phase'));
+  }
+
+  /** Shows a queued appearance once its witness is in the right place and nothing else is going on. */
+  updateGhosts() {
+    const free = !this.busy && !state.modal && !state.holding && !this.moving;
+    if (!free || this.ghostShowing) return;
+    if (this.pendingVision) {
+      const g = this.pendingVision;
+      this.pendingVision = null;
+      const react = () => g.react && this.ui.say(`"${g.react}"`);
+      if (this.fastStory()) return react();
+      return this.playBeat(null, react, { shots: VISIONS[g.vision], style: 'vision' });
+    }
+    if (!this.ghosts.length) return;
+    if (state.has('final_phase')) {
+      this.ghosts = [];
+      return;
+    }
+    // Let the last lines of narration through first; the final one can share the screen.
+    if (this.ui.queue.length) return;
+    const i = this.ghosts.findIndex((g) => g.who === state.active && g.area === state.room);
+    if (i >= 0) this.showGhost(this.ghosts.splice(i, 1)[0]);
+  }
+
+  showGhost(g) {
+    this.ghostShowing = true;
+    this.busy = true;
+    this.cancelWalk();
+    this.clearHover();
+    this.showReveal(false);
+    this.clearArrow();
+    const spot = ROOMS[state.room].ghost ?? { x: WIDTH / 2, y: this.floor().y, h: 440 };
+    const target = g.point && this.zones.find((z) => z.hotspot.id === g.point)?.hotspot;
+    const img = this.add
+      .image(spot.x, spot.y + 8, target ? 'captain_point' : 'captain')
+      .setOrigin(0.5, 1)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setAlpha(0);
+    img.setScale(spot.h / img.height);
+    const faceX = target ? target.x + target.w / 2 : this.charX;
+    img.setFlipX(Math.sign(faceX - spot.x) === -GHOST_FACES);
+    this.children.moveBelow(img, this.character);
+    const pointGlow = target ? this.addGlow(target, { color: GLOW_COOL }) : null;
+    sfx.play('ghost');
+
+    let steady = false;
+    this.tweens.add({ targets: img, alpha: 0.85, duration: 1300, ease: 'Sine.Out', onComplete: () => (steady = true) });
+    this.tweens.add({ targets: img, y: img.y - 10, duration: 2600, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+    if (pointGlow) this.tweens.add({ targets: pointGlow, alpha: { from: 0, to: 0.32 }, delay: 900, duration: 1100, yoyo: true, repeat: -1 });
+    const flicker = this.time.addEvent({
+      delay: 110,
+      loop: true,
+      callback: () => steady && img.setAlpha(Phaser.Math.Clamp(img.alpha + (Math.random() - 0.5) * 0.18, 0.55, 0.9)),
+    });
+
+    const fast = this.fastStory();
+    const textX = Phaser.Math.Clamp(spot.x, 300, WIDTH - 300);
+    const textY = Math.max(140, spot.y - spot.h * 0.9);
+    let i = -1;
+    let text = null;
+    let timer = null;
+    const leave = () => {
+      this.ghostAdvance = null;
+      steady = false;
+      flicker.remove();
+      this.dropGlow(pointGlow);
+      this.tweens.killTweensOf(img);
+      this.tweens.add({
+        targets: img,
+        alpha: 0,
+        duration: fast ? 200 : GHOST_FADE_MS,
+        onComplete: () => {
+          img.destroy();
+          this.ghostShowing = false;
+          this.busy = false;
+          state.noteInput();
+          if (g.vision) this.pendingVision = g;
+          else if (g.react) this.ui.say(`"${g.react}"`);
+        },
+      });
+    };
+    const next = () => {
+      timer?.remove();
+      if (text) this.tweens.add({ targets: text, alpha: 0, duration: 300, onComplete: (_, [t]) => t.destroy() });
+      i++;
+      if (i >= g.lines.length) return leave();
+      text = this.add
+        .text(textX, textY, g.lines[i], {
+          fontFamily: FONT,
+          fontSize: '26px',
+          fontStyle: 'italic',
+          color: CAPTAIN.css,
+          align: 'center',
+          wordWrap: { width: 560 },
+        })
+        .setOrigin(0.5)
+        .setShadow(0, 0, '#5fb8d6', 14, false, true)
+        .setAlpha(0);
+      this.tweens.add({ targets: text, alpha: 1, duration: 500, delay: i === 0 && !fast ? 700 : 0 });
+      timer = this.time.delayedCall(fast ? 300 : GHOST_LINE_MS + g.lines[i].length * 30, next);
+    };
+    this.ghostAdvance = () => i >= 0 && next();
+    next();
+  }
+
+  // ---------- side areas ----------
+
+  /** Walks through a door into another area: a short fade, then the new room with the character at its door. */
+  enterArea(area, from) {
+    this.busy = true;
+    this.cancelWalk();
+    this.clearHover();
+    this.showReveal(false);
+    sfx.play('door');
+    const r = ROOMS[area];
+    const way = r.hotspots.find((h) => h.to === from && h.stand !== undefined && this.hotspotShown(h));
+    this.pos[state.active] = way?.stand ?? r.arrive?.[from] ?? r.char.x;
+    this.facing[state.active] = this.pos[state.active] > WIDTH / 2 ? -1 : 1;
+    const cam = this.cameras.main;
+    cam.fadeOut(240, 0, 0, 0);
+    cam.once('camerafadeoutcomplete', () => {
+      this.renderRoom();
+      cam.fadeIn(320);
+      this.busy = false;
+      this.ui.refresh?.();
+      this.introduceRoom();
+    });
   }
 
   // ---------- swapping, sending, state changes ----------
@@ -1006,9 +1353,30 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
+  /** One-off room beats from handlers: the floor hatch lifting crossfades to the open painting. */
+  playEffect(name) {
+    if (name !== 'hatch' || state.room !== 'cellar') return;
+    const key = this.roomKey();
+    if (key === this.bg.texture.key) return;
+    const next = this.add.image(0, 0, key).setOrigin(0).setDisplaySize(WIDTH, HEIGHT).setAlpha(0);
+    this.children.moveAbove(next, this.bg);
+    this.tweens.add({
+      targets: next,
+      alpha: 1,
+      duration: 650,
+      ease: 'Sine.InOut',
+      onComplete: () => {
+        this.bg.setTexture(key).setDisplaySize(WIDTH, HEIGHT);
+        next.destroy();
+        this.renderOverlays();
+      },
+    });
+    this.cameras.main.shake(260, 0.004);
+  }
+
   onRoomChanged(room) {
-    if (room !== state.room) return;
-    const next = this.add.image(0, 0, this.roomKey(room)).setOrigin(0).setDisplaySize(WIDTH, HEIGHT).setAlpha(0);
+    if (mainRoom(state.room) !== room) return;
+    const next = this.add.image(0, 0, this.roomKey()).setOrigin(0).setDisplaySize(WIDTH, HEIGHT).setAlpha(0);
     this.children.moveAbove(next, this.bg);
     this.tweens.add({
       targets: next,
@@ -1016,26 +1384,56 @@ export default class GameScene extends Phaser.Scene {
       duration: 1400,
       ease: 'Sine.InOut',
       onComplete: () => {
-        this.bg.setTexture(this.roomKey(room)).setDisplaySize(WIDTH, HEIGHT);
+        this.bg.setTexture(this.roomKey()).setDisplaySize(WIDTH, HEIGHT);
         next.destroy();
         this.renderOverlays();
       },
     });
-    if (this.waterDepth(room) > 0) this.riseWater(1400, this.wadeDepth ?? 0);
+    if (this.waterDepth() > 0) this.riseWater(1400, this.wadeDepth ?? 0);
     this.cameras.main.shake(900, 0.006);
   }
 
-  /** Cutter's reply in the window, the layered ending card, then the twist card into the final scene. */
-  showEnding(id, onDone) {
-    this.busy = true;
-    this.clearHover();
-    const reply = ['.', '-', '.'];
+  /** The cutter's three flashes in the window; returns when they are done (ms). */
+  cutterReply() {
     let t = 500;
-    for (const sym of reply) {
+    for (const sym of ['.', '-', '.']) {
       const ms = sym === '.' ? 160 : 520;
       this.time.delayedCall(t, () => this.flashWindow(ms, 0xd8f0ff));
       t += ms + 380;
     }
+    return t;
+  }
+
+  /** The cutter answers, then Game and UI sleep under the RaidScene until the fight is over. */
+  playRaid(onResult) {
+    const wasModal = state.modal;
+    this.busy = true;
+    state.modal = true;
+    this.cancelWalk();
+    this.clearHover();
+    this.showReveal(false);
+    this.time.delayedCall(this.cutterReply() + 300, () => {
+      const cam = this.cameras.main;
+      cam.fadeOut(450, 0, 0, 0);
+      cam.once('camerafadeoutcomplete', () => {
+        let result = null;
+        this.beatDone = () => {
+          this.busy = false;
+          state.modal = wasModal;
+          onResult(result);
+        };
+        this.scene.launch('Raid', { onResult: (r) => (result = r) });
+        this.scene.sleep('UI');
+        this.scene.sleep();
+      });
+    });
+  }
+
+  /** Cutter's reply in the window (unless the raid already followed it), the layered ending card, then the twist card into the final scene. */
+  showEnding(id, onDone) {
+    this.busy = true;
+    this.clearHover();
+    const t = state.has('raid_done') ? 200 : this.cutterReply();
     const card = () => {
       sfx.play('win');
       this.ui.endingCard(endingCard(state, id), () => {
@@ -1058,7 +1456,7 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
-  // ---------- layout tool (L on localhost or with ?debug) ----------
+  // ---------- layout tool (F2 on localhost or with ?debug) ----------
 
   toggleLayoutMode() {
     if (!this.layoutAllowed || state.modal) return;
@@ -1076,6 +1474,7 @@ export default class GameScene extends Phaser.Scene {
     this.layoutLabels = [];
     if (!this.layoutMode) return;
     for (const hs of ROOMS[state.room].hotspots) {
+      if ((hs.art || hs.noArt) && !this.hotspotShown(hs)) continue;
       const shown = !hs.visibleIf || hs.visibleIf(state);
       this.layoutGfx.lineStyle(2, shown ? 0x7fffd4 : 0x888888, shown ? 1 : 0.6).strokeRect(hs.x, hs.y, hs.w, hs.h);
       this.layoutLabels.push(
@@ -1099,7 +1498,7 @@ export default class GameScene extends Phaser.Scene {
     const x = Math.round(pointer.x);
     const y = Math.round(pointer.y);
     this.layoutText.setText(
-      [`LAYOUT MODE (L to exit)  pointer ${x}, ${y}`, 'drag: measure a hotspot   shift-click: place character (sets the feet line)', this.lastMeasure ?? '', extra]
+      [`LAYOUT MODE (F2 to exit)  pointer ${x}, ${y}`, 'drag: measure a hotspot   shift-click: place character (sets the feet line)', this.lastMeasure ?? '', extra]
         .filter(Boolean)
         .join('\n'),
     );

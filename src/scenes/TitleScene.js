@@ -19,7 +19,7 @@ export default class TitleScene extends Phaser.Scene {
     this.add
       .text(80, 110, TITLE, { fontFamily: FONT, fontSize: '72px', color: COLORS.paperCss, fontStyle: 'bold' })
       .setShadow(0, 4, '#000', 12, true, true);
-    this.add.text(84, 200, TAGLINE, { fontFamily: FONT, fontSize: '26px', color: COLORS.amberCss, fontStyle: 'italic' });
+    this.add.text(84, 200, TAGLINE, { fontFamily: FONT, fontSize: '26px', color: COLORS.amberCss });
 
     const missing = this.registry.get('missing');
     if (!missing.has('mara')) this.addCharacter('mara', WIDTH - 400, 420);

@@ -10,17 +10,27 @@
 //   board     column id to pin the suspicious cards on at the end ('tobin', 'mara', 'crane', 'triangle'), or null
 //   pause     checkpoint names to stop at (e.g. ['lens', 'valves', 'morse']). At each one the run sets
 //             window.__checkpoint and waits until window.__resume = true, so a screenshot can be taken.
-// Checkpoints: howto, closeup, tubeChoice, lensSooty, lens, plate, valves, lightning, dim, hold, lamplit, morse,
-//              arrest, ending, projection, twist, board, finalLine, final, epilogue.
+//   story     true plays chapter cards, the captain and his visions at full length (they are still
+//             skipped with Esc/clicks); false (default) sets window.__fastStory so they flash past
+//   shots     true calls window.__shot(name) at every checkpoint (tools/run3d.mjs --shots saves them)
+//   raid      'skip' (default) sets window.__fastRaid so the finale raid is skipped at once; 'fight'
+//             plays it with synthetic mouse moves, clicks and Tab swaps until the cutter arrives
+// Checkpoints: chapter, hook, howto, closeup, ghost, tubeChoice, lensSooty, lens, plate, valves, vision,
+//              wheelroom, lightning, dim, hold, lamplit, gallery, morse, raidHowto, raidGallery, raidCellar,
+//              raidResult, arrest, ending, projection, twist,
+//              board, log, finalLine, final, epilogue.
 // The characters teleport instead of walking (window.__fastWalk), so timings don't depend on distance.
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie', slip = false, lightning = false, board = 'tobin', pause = [] } = {}) {
+export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie', slip = false, lightning = false, board = 'tobin', story = false, shots = false, pause = [], raid = 'skip' } = {}) {
+  for (let i = 0; i < 200 && !window.__game; i++) await sleep(100);
   const game = window.__game;
   const S = window.__state;
   const canvas = document.querySelector('canvas');
   window.__fastWalk = true;
+  window.__fastStory = !story;
+  window.__fastRaid = raid !== 'fight';
   const { ROOMS } = await import('/src/data/rooms.js');
   const { VALVE_COLORS, VALVE_ORDER, MORSE } = await import('/src/data/puzzles.js');
   const { COLUMNS, EPILOGUES } = await import('/src/data/board.js');
@@ -70,6 +80,10 @@ export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie
   };
   const checkpoint = async (name) => {
     step(`checkpoint ${name}`);
+    if (shots && window.__shot) {
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      await window.__shot(name);
+    }
     if (!pause.includes(name)) return;
     window.__resume = false;
     window.__checkpoint = name;
@@ -104,16 +118,67 @@ export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie
     await sleep(700);
   };
 
+  /**
+   * Waits until the player could act, getting chapter cards, the captain and his visions out of
+   * the way (Esc), and letting any appearance due here play first so it can't eat the next click.
+   */
+  const shown = new Set();
+  const once = async (name, ms) => {
+    if (shown.has(name)) return;
+    shown.add(name);
+    await sleep(ms);
+    await checkpoint(name);
+  };
+  const settle = async (label) => {
+    const t0 = performance.now();
+    for (;;) {
+      if (performance.now() - t0 > 40000) throw new Error(`timed out settling before ${label} (modal=${S.modal} kind=${modalKind()} busy=${gs()?.busy})\n${log.join('\n')}`);
+      if (scenes().includes('Cutscene') && !scenes().includes('Game')) {
+        await once('vision', 2600);
+        key('Escape');
+        step('skipped a vision');
+        await waitFor(() => scenes().includes('Game') && !scenes().includes('Cutscene'), 'back from the vision');
+        await sleep(700);
+        continue;
+      }
+      if (modalKind() === 'chapter') {
+        await once('chapter', story ? 1400 : 0);
+        key('Escape');
+        await sleep(250);
+        continue;
+      }
+      if (gs().ghostShowing) {
+        await once('ghost', story ? 2600 : 200);
+        step('the captain appears');
+        key('Escape');
+        await sleep(story ? 500 : 150);
+        continue;
+      }
+      if (!S.modal && !gs().busy && gs().ghostPending() && !S.holding) {
+        ui().clearMessages();
+        await sleep(150);
+        continue;
+      }
+      if (!S.modal && !gs().busy) return;
+      await sleep(100);
+    }
+  };
+
   const hotspot = async (id) => {
     await closeCloseup();
-    await waitFor(() => !S.modal && !gs().busy, `idle before ${id}`);
+    await settle(id);
     click(...center(id));
     step(id);
     await sleep(450);
     await closeCloseup();
   };
+  const area = async (exit, to) => {
+    await hotspot(exit);
+    await waitFor(() => S.room === to, `walked into ${to}`);
+    await settle(to);
+  };
   const swap = async () => {
-    await waitFor(() => !S.modal && !gs().busy, 'idle before swap');
+    await settle('swap');
     const before = S.active;
     key('Tab');
     await waitFor(() => S.active !== before && !gs().busy, 'swap');
@@ -125,6 +190,70 @@ export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie
     }
   };
   let reactionShot = false;
+
+  /** The finale raid: skipped at once, or fought with synthetic input until the cutter arrives. */
+  const playRaid = async () => {
+    if (raid !== 'fight') {
+      await waitFor(() => S.has('raid_done'), 'raid skipped', 20000);
+      expect(S.has('raid_skipped') && S.memo.raid.tier === 'bruised', 'a skipped raid is recorded as bruised');
+      step('raid skipped');
+      return;
+    }
+    await waitFor(() => scenes().includes('Raid'), 'raid scene', 20000);
+    const r = game.scene.getScene('Raid');
+    while (r.phase === 'intro') {
+      click(640, 360);
+      await sleep(500);
+    }
+    await checkpoint('raidHowto');
+    key('Enter');
+    await waitFor(() => r.phase === 'fight', 'fight');
+    step('raid: fight');
+    const seen = { gallery: false, cellar: false };
+    while (r.phase === 'fight') {
+      const sim = r.sim;
+      if (!seen[r.front] && sim.active(r.front).length && sim.time > 9000) {
+        seen[r.front] = true;
+        await checkpoint(r.front === 'gallery' ? 'raidGallery' : 'raidCellar');
+      }
+      const there = r.front === 'gallery' ? 'cellar' : 'gallery';
+      const p = sim.pressure(there);
+      const mine = sim.pressure(r.front);
+      if (p && (!mine || p.level > mine.level)) {
+        key('Tab');
+        await sleep(450);
+        continue;
+      }
+      if (r.front === 'gallery') {
+        const top = sim.active('gallery').find((w) => w.state === 'top');
+        if (top) {
+          for (let i = 0; i < 3; i++) {
+            click(r.screenX(top), r.screenY(top));
+            await sleep(150);
+          }
+          continue;
+        }
+        const c = sim.active('gallery').filter((w) => w.state === 'climbing').sort((a, b) => b.progress - a.progress)[0];
+        if (c) {
+          move(r.screenX(c), r.screenY(c));
+          if (c.blind) click(r.screenX(c), r.screenY(c));
+        }
+      } else {
+        const w = sim.active('cellar').sort((a, b) => b.progress - a.progress)[0];
+        if (w && sim.inGreen(w)) click(r.screenX(w), r.screenY(w));
+      }
+      await sleep(70);
+    }
+    await waitFor(() => r.phase === 'result' && r.result, 'raid result', 10000);
+    await sleep(600);
+    await checkpoint('raidResult');
+    const result = r.sim.result();
+    click(640, 600);
+    await waitFor(() => S.has('raid_done') && !scenes().includes('Raid'), 'back from the raid', 10000);
+    expect(S.has(`raid_${result.tier}`) && !result.skipped, `raid fought to the end: ${result.tier}`);
+    step(`raid: ${result.tier} (damage ${result.damage}, scuffles ${result.scuffles})`);
+  };
+
   const as = async (who) => {
     if (S.active !== who) await swap();
   };
@@ -180,8 +309,12 @@ export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie
   const tube = () => talk(S.active === 'mara' ? 'hatch_lamp' : 'hatch_cellar');
 
   // ---- start ----
+  await waitFor(() => ['Title', 'Cutscene', 'Game'].some((k) => scenes().includes(k)), 'boot', 90000);
   if (scenes().includes('Title')) {
-    click(640, 360);
+    for (let i = 0; i < 20 && scenes().includes('Title'); i++) {
+      click(640, 360);
+      await sleep(500);
+    }
     await waitFor(() => scenes().includes('Cutscene'), 'cutscene');
   }
   if (scenes().includes('Cutscene')) {
@@ -189,7 +322,20 @@ export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie
     key('Escape');
   }
   await waitFor(() => scenes().includes('Game') && gs().playing, 'game started');
-  await sleep(300);
+  await waitFor(() => ['chapter', 'talk'].includes(modalKind()), 'chapter one');
+  if (modalKind() === 'chapter') {
+    await once('chapter', story ? 1400 : 0);
+    key('Escape');
+  }
+  await waitFor(() => modalKind() === 'talk', 'opening tube exchange');
+  await sleep(400);
+  await checkpoint('hook');
+  while (modalKind() === 'talk') {
+    key(' ');
+    await sleep(260);
+  }
+  expect(S.has('chapter_log') && S.log.filter((e) => e.kind === 'talk').length >= 7, 'chapter one and the opening exchange are logged');
+  await sleep(500);
   if (modalKind() === 'howto') {
     await sleep(400);
     await checkpoint('howto');
@@ -297,6 +443,22 @@ export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie
   await sleep(800);
   await tube();
   if (truth) expect(S.has('ledger_volunteered') === (tubeKind === 'clean'), 'a trusting Tobin volunteers the ledger');
+  expect(S.has('chapter_tide') && S.has('ghost_flood') && S.board.vision_marigold, 'chapter three, the flood ghost and its vision cards');
+
+  // Tobin's side area: down the floor hatch (left open by the flood) to the tide-wheel chamber, and a swap from inside it
+  expect(S.has('hatch_open'), 'the flood leaves the floor hatch open');
+  await area(gs().hatchArt() ? 'floor_hatch_wet' : 'wheel_door', 'wheelroom');
+  await checkpoint('wheelroom');
+  await hotspot('slate');
+  await hotspot('hook');
+  await hotspot('tide_wheel');
+  await hotspot('dynamo');
+  expect(S.board.slate && S.board.stay_in_town && S.board.vision_crane, 'wheel-chamber cards');
+  await swap();
+  expect(S.room === 'lamp', 'Mara is still in the lamp room');
+  await swap();
+  expect(S.room === 'wheelroom', 'Tobin is still in the wheel chamber');
+  await area('wheel_back', 'cellar');
 
   if (lightning) {
     await swap();
@@ -341,7 +503,16 @@ export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie
   await swap();
   if (truth) await tube();
   await hotspot('window');
-  await hotspot('balcony');
+  expect(S.has('chapter_signal'), 'chapter four after the lamp');
+
+  // Mara's side area: the gallery outside the lamp room
+  await area('balcony', 'gallery');
+  await checkpoint('gallery');
+  await hotspot('rail');
+  await hotspot('tally');
+  await hotspot('mooring');
+  expect(S.has('saw_wool') && S.board.wool && S.board.cut_rope && S.board.vision_stairs, 'gallery cards');
+  await area('gallery_back', 'lamp');
 
   // Climax
   await hotspot('lamp');
@@ -361,6 +532,7 @@ export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie
       await sleep(160);
     }
   }
+  await playRaid();
   if (truth) await skipBeat('arrest');
   await waitFor(() => modalKind() === 'ending', 'ending card', 20000);
   await sleep(3500);
@@ -425,6 +597,16 @@ export async function run({ actor = 'tobin', truth = true, tube: tubeKind = 'lie
     key('Escape');
     await sleep(400);
   }
+  await settle('log');
+  key('l');
+  await waitFor(() => modalKind() === 'case' && ui().modal.tab === 'log', 'story log');
+  await sleep(400);
+  await checkpoint('log');
+  key('Escape');
+  await sleep(300);
+  const choices = S.log.filter((e) => e.kind === 'choice');
+  expect(choices.length >= 6 && choices.every((c) => c.options.length >= 2 && c.options[c.chosen]), 'every choice is logged with its alternatives');
+  expect(['log', 'water', 'tide', 'signal', 'low'].every((id) => S.has(`chapter_${id}`)), 'all five chapters began');
   if (actor === 'mara') {
     await swap();
     await hotspot('lamp');

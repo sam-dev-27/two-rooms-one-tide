@@ -225,7 +225,7 @@ export function title(ui, { onStart } = {}) {
     img.animate([{ opacity: 0, translate: '0 30px' }, { opacity: 1, translate: '0 0' }], { duration: 900, delay: 300, easing: CSS_EASE.cubicOut, fill: 'forwards' });
   }
   text(layer, TITLE, { x: 80, y: 110, size: 72, bold: true, cls: 'shadow-lg' });
-  text(layer, TAGLINE, { x: 84, y: 200, size: 26, italic: true, color: AMBER });
+  text(layer, TAGLINE, { x: 84, y: 200, size: 26, color: AMBER });
   text(layer, 'Click to begin', { x: 84, y: HEIGHT - 150, size: 30, cls: 'shadow title-prompt' });
   text(layer, 'WASD: move    Mouse: look    Click/E: use    Tab: switch    C: case board    H: hint    ?: help    M: sound', { x: 84, y: HEIGHT - 100, size: 18, cls: 'shadow' });
   text(layer, 'Made for the DreamLayer Game Jam. Art generated with DreamLayer. 3D version (experimental).', { x: 84, y: HEIGHT - 24, oy: 1, size: 14, color: MUTED });
@@ -266,8 +266,8 @@ export function endingScreen(ui, { epilogue = null, time = '0:00', hints = 0, ti
   ui.endingEpilogue = epilogue;
   const ending = ENDINGS.final;
   const layer = screenLayer(ui, 'ending-screen', 'ending');
-  const card = text(layer, FINAL_CARD, { x: WIDTH / 2, y: HEIGHT / 2, ox: 0.5, oy: 0.5, size: 36, italic: true, style: { opacity: 0 } });
-  const verdict = text(layer, epilogue ?? '', { x: WIDTH / 2, y: HEIGHT / 2 + 56, ox: 0.5, oy: 0.5, size: 22, italic: true, color: AMBER, style: { opacity: 0 } });
+  const card = text(layer, FINAL_CARD, { x: WIDTH / 2, y: HEIGHT / 2, ox: 0.5, oy: 0.5, size: 36, hand: true, style: { opacity: 0 } });
+  const verdict = text(layer, epilogue ?? '', { x: WIDTH / 2, y: HEIGHT / 2 + 56, ox: 0.5, oy: 0.5, size: 22, color: AMBER, style: { opacity: 0 } });
 
   const chain = (node, steps) => {
     const total = steps.reduce((t, s) => t + s.delay + s.duration, 0);

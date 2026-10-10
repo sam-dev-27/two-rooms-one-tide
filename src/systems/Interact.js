@@ -1,7 +1,11 @@
 // Bridges puzzle handlers to the game. `view` supplies presentation (text, sound, animation,
 // modals); everything that changes game state goes through `state` here.
 import { HANDLERS, HOLDS, pendingTalk } from '../data/puzzles.js';
-import { TUTORIAL, WRONG_ITEM, BARKS, HOLD_TEXT, TRUST_DELTA } from '../data/text.js';
+import { TUTORIAL, WRONG_ITEM, BARKS, HOLD_TEXT, TRUST_DELTA, CHOICE_LABELS, trusting } from '../data/text.js';
+import { CHAPTERS, GHOSTS } from '../data/story.js';
+import { VISIONS } from '../data/cutscenes.js';
+import { ROOMS } from '../data/rooms.js';
+import { recordRaid } from './Raid.js';
 
 export function createApi(state, view) {
   const api = {
@@ -9,6 +13,10 @@ export function createApi(state, view) {
 
     get actor() {
       return state.active;
+    },
+    /** The area the active character is in (their main room unless they walked out of it). */
+    get area() {
+      return state.room;
     },
     get tideLevel() {
       return state.tide;
@@ -25,6 +33,11 @@ export function createApi(state, view) {
     inventoryEmpty: () => state.inventory[state.active].length === 0,
 
     say: (text) => view.say(text),
+    /** A line worth keeping in the story log as well as saying. */
+    narrate(text) {
+      state.logLine('narration', null, text);
+      view.say(text);
+    },
     sfx: (name) => view.sfx(name),
     note: (id, text) => state.addNote(id, text),
 
@@ -49,6 +62,8 @@ export function createApi(state, view) {
       if (option.card) api.card(option.card);
     },
 
+    logChoice: (who, title, options, chosen) => state.logChoice(who, title, options, chosen),
+
     give(item) {
       const combined = state.give(item);
       view.pickup(item, api.hotspot);
@@ -65,6 +80,9 @@ export function createApi(state, view) {
       view.sfx('send');
       view.sent(item, api.hotspot);
     },
+
+    /** A one-off visual beat in the room (the floor hatch lifting); purely presentation. */
+    effect: (name) => view.effect?.(name),
 
     setRoomState(room, value) {
       state.setRoomState(room, value);
@@ -97,12 +115,84 @@ export function createApi(state, view) {
       if (state.active !== who) view.swapTo(who);
     },
 
+    /**
+     * Walks the active character into another area. Returns false when the view has no areas
+     * (the 3D version), so handlers can fall back to their single-room behaviour.
+     */
+    goTo(area) {
+      if (!view.goTo || !ROOMS[area]) return false;
+      const from = state.room;
+      if (!state.setArea(state.active, area)) return false;
+      view.goTo(area, from);
+      return true;
+    },
+    homeAll() {
+      state.homeAll();
+      view.refresh();
+    },
+
+    /** Shows a chapter card once (CHAPTERS[id]); `then` runs after it, or at once if it was already shown. */
+    chapter(id, then) {
+      if (!CHAPTERS[id] || !state.beginChapter(id)) return then?.();
+      if (view.chapter) view.chapter(CHAPTERS[id], then);
+      else then?.();
+    },
+
+    /**
+     * Captain Hale appears (GHOSTS[id]) once. His lines, any vision captions and cards are
+     * recorded straight away; the view shows him whenever the witness is in the right place.
+     */
+    ghost(id) {
+      const def = GHOSTS[id];
+      if (!def || state.has(`ghost_${id}`)) return false;
+      state.set(`ghost_${id}`);
+      for (const line of def.lines) state.logLine('ghost', 'captain', line);
+      const react = def.react?.[trusting(state) ? 'warm' : 'cold'];
+      if (react) state.logLine('talk', def.who, react);
+      for (const shot of VISIONS[def.vision] ?? []) for (const line of shot.captions) state.logLine('vision', null, line);
+      for (const card of def.cards ?? []) api.card(card);
+      if (view.ghost) view.ghost({ id, ...def, react });
+      else for (const line of def.lines) view.say(`A drowned man's voice: "${line}"`);
+      return true;
+    },
+
     keypad: (opts) => view.keypad(opts),
     choice: (opts) => view.choice(opts),
     lens: (opts) => view.lens(opts),
     valves: (opts) => view.valves(opts),
     morse: (opts) => view.morse(opts),
-    talk: (lines, onDone) => view.talk(lines, onDone, (choice, option) => api.chose(choice, option)),
+
+    /** A conversation. Lines are logged as they are reached; a choice logs every option on offer. */
+    talk(lines, onDone) {
+      const rest = [...lines];
+      const logUntilChoice = () => {
+        while (rest.length && Array.isArray(rest[0])) state.logLine('talk', ...rest.shift());
+        rest.shift();
+      };
+      logUntilChoice();
+      view.talk(lines, onDone, (choice, option) => {
+        api.chose(choice, option);
+        state.logChoice(
+          choice.who,
+          null,
+          choice.options.map((o) => `${CHOICE_LABELS[o.kind]}: ${o.label}`),
+          choice.options.indexOf(option),
+        );
+        for (const line of option.lines) if (Array.isArray(line)) state.logLine('talk', ...line);
+        logUntilChoice();
+      });
+    },
+    /**
+     * The finale raid, once per game. Views without one (the 3D version) skip it and the ending
+     * card simply has no raid line; otherwise the result is recorded before `then` runs.
+     */
+    raid(then) {
+      if (state.has('raid_done') || !view.raid) return then?.();
+      view.raid((result) => {
+        recordRaid(state, result);
+        then?.();
+      });
+    },
     ending: (id, onDone) => view.ending(id, onDone),
     end: (id) => view.end(id),
     refresh: () => view.refresh(),

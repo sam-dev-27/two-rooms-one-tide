@@ -25,8 +25,8 @@ export function talk(ui, lines, onDone, onChoose) {
   const name = text(root, '', { x: px + 180, y: py + 20, size: 20, bold: true });
   const body = text(root, '', { x: px + 180, y: py + 52, size: 22, width: pw - 220, spacing: 5 });
   const more = text(root, 'Click or Space', { x: px + pw - 20, y: py + ph - 14, ox: 1, oy: 1, size: 15, color: MUTED });
-  text(root, 'Speaking tube', { x: px + 20, y: py - 10, oy: 1, size: 15, italic: true, color: AMBER });
-  const remember = text(root, '', { x: px + pw - 20, y: py - 10, ox: 1, oy: 1, size: 16, italic: true, color: AMBER });
+  text(root, 'Speaking tube', { x: px + 20, y: py - 10, oy: 1, size: 15, color: AMBER });
+  const remember = text(root, '', { x: px + pw - 20, y: py - 10, ox: 1, oy: 1, size: 16, color: AMBER });
   const optionsBox = el('div', { cls: 'talk-options', parent: root });
   const c = ui.adoptModal({ kind: 'talk', closable: false, el: root, onClose: null });
 

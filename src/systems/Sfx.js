@@ -23,6 +23,49 @@ const SYNTH = {
     { freq: 55, to: 32, dur: 1.6, type: 'sine', vol: 0.12 },
   ],
   tick: [{ freq: 1180, dur: 0.04, type: 'square', vol: 0.03 }],
+  // Captain Hale: a cold breathy whisper over two low, slightly sour tones.
+  ghost: [
+    { noise: true, filter: 'bandpass', dur: 2.4, from: 2600, to: 900, vol: 0.12 },
+    { freq: 196, to: 185, dur: 2.6, type: 'sine', vol: 0.05 },
+    { freq: 277, to: 262, dur: 2.2, type: 'sine', vol: 0.035, delay: 0.4 },
+  ],
+  vision: [
+    { noise: true, filter: 'bandpass', dur: 3, from: 400, to: 1800, vol: 0.08 },
+    { freq: 392, dur: 2.8, type: 'sine', vol: 0.04 },
+    { freq: 587, dur: 2.4, type: 'sine', vol: 0.025, delay: 0.5 },
+  ],
+  door: [
+    { freq: 90, to: 60, dur: 0.5, type: 'sawtooth', vol: 0.05 },
+    { noise: true, dur: 0.6, from: 600, to: 120, vol: 0.12 },
+  ],
+  // The floor hatch: old hinges, then the boards settling.
+  creak: [
+    { freq: 210, to: 330, dur: 0.55, type: 'sawtooth', vol: 0.035 },
+    { freq: 300, to: 180, dur: 0.45, type: 'sawtooth', vol: 0.03, delay: 0.5 },
+    { noise: true, dur: 0.5, from: 500, to: 90, vol: 0.12 },
+  ],
+  // The raid.
+  splash: [
+    { noise: true, dur: 0.9, from: 2400, to: 300, vol: 0.22 },
+    { freq: 140, to: 60, dur: 0.3, type: 'sine', vol: 0.08 },
+  ],
+  thud: [
+    { freq: 110, to: 45, dur: 0.22, type: 'sine', vol: 0.2 },
+    { noise: true, dur: 0.18, from: 900, to: 150, vol: 0.12 },
+  ],
+  shove: [
+    { freq: 180, to: 90, dur: 0.12, type: 'square', vol: 0.06 },
+    { noise: true, dur: 0.25, from: 1500, to: 300, vol: 0.1 },
+  ],
+  flashbeam: [{ freq: 900, to: 1800, dur: 0.18, type: 'triangle', vol: 0.06 }],
+  shout: [
+    { freq: 170, to: 120, dur: 0.35, type: 'sawtooth', vol: 0.035 },
+    { noise: true, filter: 'bandpass', dur: 0.35, from: 900, to: 600, vol: 0.05 },
+  ],
+  horn: [
+    { freq: 147, dur: 1.4, type: 'sawtooth', vol: 0.05 },
+    { freq: 220, dur: 1.4, type: 'triangle', vol: 0.04 },
+  ],
 };
 
 class Sfx {
@@ -83,12 +126,13 @@ class Sfx {
     return buffer;
   }
 
-  noise({ dur, from, to, vol }) {
+  noise({ dur, from, to, vol, filter: type = 'lowpass' }) {
     const t = this.ctx.currentTime;
     const src = this.ctx.createBufferSource();
     src.buffer = this.noiseBuffer(dur);
     const filter = this.ctx.createBiquadFilter();
-    filter.type = 'lowpass';
+    filter.type = type;
+    if (type === 'bandpass') filter.Q.value = 6;
     filter.frequency.setValueAtTime(from, t);
     filter.frequency.exponentialRampToValueAtTime(to, t + dur * 0.6);
     const gain = this.ctx.createGain();

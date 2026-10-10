@@ -188,7 +188,7 @@ export function howTo(ui, onClose) {
     root.appendChild(icon);
     text(root, row.text, { x: x + 128, y: cy, oy: 0.5, size: 19, width: w - 168, spacing: 3 });
   });
-  text(root, 'Click or press Enter to begin   ·   ? or F1 shows this again', { x: WIDTH / 2, y: y + h - 34, ox: 0.5, oy: 0.5, size: 16, italic: true, color: AMBER });
+  text(root, 'Click or press Enter to begin   ·   ? or F1 shows this again', { x: WIDTH / 2, y: y + h - 34, ox: 0.5, oy: 0.5, size: 16, color: AMBER });
   ui.state.markSeen('howto');
   ui.closeOnAnyInput(c);
   ui.afterClose(c, onClose);
@@ -228,7 +228,7 @@ export function closeup(ui, id, then) {
     img.src = src;
   }
   const caption = def.caption ? `${def.caption}   ·   ` : '';
-  text(root, `${caption}Click to close`, { x: WIDTH / 2, y: y + h - 22, ox: 0.5, oy: 0.5, size: 17, italic: true, color: def.caption ? PAPER : MUTED });
+  text(root, `${caption}Click to close`, { x: WIDTH / 2, y: y + h - 22, ox: 0.5, oy: 0.5, size: 17, color: def.caption ? PAPER : MUTED });
   ui.closeOnAnyInput(c);
   const prev = c.onClose;
   c.onClose = () => {
@@ -296,7 +296,7 @@ export function endingCard(ui, { title, image, text: body, footer }, onDone) {
 /** Fades to black with a line of text, runs `onDone` under the black, then fades back. */
 export function blackCard(ui, line, onDone) {
   const root = el('div', { cls: 'black-card', attrs: { 'data-kind': 'black' }, parent: ui.stage });
-  const label = text(root, line, { x: WIDTH / 2, y: HEIGHT / 2, ox: 0.5, oy: 0.5, size: 34, italic: true });
+  const label = text(root, line, { x: WIDTH / 2, y: HEIGHT / 2, ox: 0.5, oy: 0.5, size: 34, hand: true });
   label.style.opacity = 0;
   const c = ui.adoptModal({ kind: 'black', closable: false, el: root, onClose: null });
   const total = 300 + 900 + 1700 + 700;

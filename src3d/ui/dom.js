@@ -40,12 +40,15 @@ export function place(node, x, y, ox = 0, oy = 0) {
 
 export const lineHeight = (size, spacing = 0) => `${Math.round(size * 1.16 + spacing)}px`;
 
-/** A Phaser-like text object: no wrap unless `width` is given; lines keep their spaces. */
-export function text(parent, str, { x = 0, y = 0, ox = 0, oy = 0, size = 20, color = PAPER, italic, bold, width, align, spacing = 0, font, cls, style } = {}) {
+/**
+ * A Phaser-like text object: no wrap unless `width` is given; lines keep their spaces.
+ * UI text is upright; `hand` sets in-world writing in italic.
+ */
+export function text(parent, str, { x = 0, y = 0, ox = 0, oy = 0, size = 20, color = PAPER, hand, bold, width, align, spacing = 0, font, cls, style } = {}) {
   const node = el('div', { cls: `txt${cls ? ` ${cls}` : ''}`, text: str, parent });
   setStyle(node, { fontSize: size, color, lineHeight: lineHeight(size, spacing), whiteSpace: width ? 'pre-wrap' : 'pre' });
   if (width) node.style.maxWidth = `${width}px`;
-  if (italic) node.style.fontStyle = 'italic';
+  if (hand) node.style.fontStyle = 'italic';
   if (bold) node.style.fontWeight = 'bold';
   if (align) node.style.textAlign = align;
   if (font) node.style.fontFamily = font;

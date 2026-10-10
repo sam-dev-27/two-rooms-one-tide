@@ -9,25 +9,34 @@ import { createApi, interact, pendingTalk } from '../src/systems/Interact.js';
 import { readFileSync } from 'node:fs';
 import { nextHint, objective, objectiveTarget, useHint } from '../src/systems/Hints.js';
 import { ROOMS } from '../src/data/rooms.js';
-import { VALVE_COLORS, VALVE_ORDER, LENS_PANELS, HOLD_MS, lightningStrike, lightningPending } from '../src/data/puzzles.js';
+import { VALVE_COLORS, VALVE_ORDER, LENS_PANELS, HOLD_MS, lightningStrike, lightningPending, startStory } from '../src/data/puzzles.js';
+import { HOOK, CHAPTERS, CHAPTER_ORDER, GHOSTS } from '../src/data/story.js';
+import { VISIONS } from '../src/data/cutscenes.js';
 import { HINTS, endingCard, FINAL_LINES, finalLine, HOLD_TEXT, BARKS, CROSS_ROOM, TALKS, TRUST_WARM, CLOSEUPS, ENDINGS, HOW_TO } from '../src/data/text.js';
 import { CARDS, COLUMNS, REACTIONS, boardVerdict, epilogueLine, EPILOGUES } from '../src/data/board.js';
 import { BEATS } from '../src/data/cutscenes.js';
 import { CLOSEUP_IMAGES, CUTSCENE_IMAGES } from '../src/data/assets.js';
 import { TIDE_MAX, TIDE_STEP_MS } from '../src/config.js';
+import { RAID, RAID_TEXT } from '../src/data/raid.js';
+import { RaidSim, schedule, tierFor, recordRaid } from '../src/systems/Raid.js';
 
 const verbose = process.argv.includes('--verbose');
 
 /** `policy` picks speaking-tube lines: a kind ('lie' | 'deflect' | 'clean') or { choiceId: kind }. */
-function makeGame({ policy = 'lie' } = {}) {
+function makeGame({ policy = 'lie', areas = true, raidResult = { tier: 'bruised', damage: 40, scuffles: 0, skipped: false } } = {}) {
   const state = new GameState();
   const log = [];
+  const effects = [];
+  const order = [];
   const talks = [];
   const choices = [];
   const pending = {};
   const closeups = [];
   const cutscenes = [];
   const objectives = [];
+  const walks = [];
+  const ghosts = [];
+  const chapters = [];
   let ending = null;
   let finalEnd = null;
   const sample = () => {
@@ -91,10 +100,25 @@ function makeGame({ policy = 'lie' } = {}) {
     },
     ending: (id, onDone) => {
       ending = id;
+      order.push('ending');
       onDone();
     },
     end: (id) => (finalEnd = id),
+    effect: (name) => effects.push(name),
   };
+  // The 2D view walks between areas, shows the captain, chapter cards and the raid; the 3D view does none of it.
+  if (areas) {
+    view.raid = (done) => {
+      order.push('raid');
+      done({ ...raidResult });
+    };
+    view.goTo = (area, from) => walks.push(`${from}>${area}`);
+    view.ghost = (g) => ghosts.push(g.id);
+    view.chapter = (def, then) => {
+      chapters.push(def.numeral);
+      then?.();
+    };
+  }
   const api = createApi(state, view);
 
   const find = (id) => {
@@ -123,6 +147,12 @@ function makeGame({ policy = 'lie' } = {}) {
     closeups,
     cutscenes,
     objectives,
+    walks,
+    ghosts,
+    chapters,
+    effects,
+    order,
+    areas,
     get ending() {
       return ending;
     },
@@ -172,16 +202,29 @@ const said = (talk, re) => talk.some(([, t]) => re.test(t));
 function playToSignal(g, { hideLetter = false, hideEnvelope = true, wrongValves = 0, policy = 'lie', slips = 0 } = {}) {
   const s = g.state;
 
+  // Chapter I and the opening exchange through the tube.
+  startStory(g.api);
+  if (g.areas) assert.deepEqual(g.chapters, ['I']);
+  assert.ok(s.has('chapter_log') && s.log.filter((e) => e.kind === 'talk').length === HOOK.length, 'the hook is logged under chapter I');
+
   // Mara: logbook teaches flash-code names.
   g.as('mara');
   assert.ok(s.board.fall, 'the fall is on the board from the start');
   g.click('logbook');
   assert.ok(s.has('read_logbook'));
   assert.ok(s.board.flash_names && s.board.thursday, 'logbook clues become cards');
+  assert.ok(s.has('ghost_logbook') && s.board.captain, 'the captain appears after the logbook');
   g.click('lamp');
   assert.ok(!s.has('fuse_fitted'), 'lamp is dead without a fuse');
   g.click('balcony');
-  assert.ok(!s.has('saw_wool'), 'balcony locked before full power');
+  if (g.areas) {
+    assert.equal(s.room, 'gallery', 'the balcony door leads out to the gallery');
+    assert.ok(!s.has('saw_wool'), 'nothing found yet');
+    g.click('gallery_back');
+    assert.equal(s.room, 'lamp');
+  } else {
+    assert.ok(!s.has('saw_wool'), 'balcony locked before full power');
+  }
   assert.equal(pendingTalk(g.api), null, 'no talk before both have looked around');
 
   // Tobin: chalk code and anchor.
@@ -312,10 +355,37 @@ function playToSignal(g, { hideLetter = false, hideEnvelope = true, wrongValves 
   assert.ok(said(t5, /man with a pen/));
   assert.equal(s.has('ledger_volunteered'), trustAtT5 >= TRUST_WARM, 'Tobin volunteers the T only when trust is high');
   assert.equal(said(t5, /hear that from me/), trustAtT5 >= TRUST_WARM);
+  assert.ok(s.has('ghost_flood') && s.board.vision_dim && s.board.vision_marigold, 'the flood brings the captain and his vision');
+
+  // Tobin's side area: the tide-wheel chamber behind the cellar.
+  const early = [];
+  if (g.areas) {
+    assert.ok(s.has('hatch_open'), 'the flood leaves the floor hatch open');
+    assert.ok(!g.visible('floor_hatch') && !g.visible('floor_hatch_open') && g.visible('floor_hatch_wet'), 'the flooded room has its own hatch hotspot');
+    g.click('floor_hatch_wet');
+    assert.equal(s.room, 'wheelroom');
+    assert.ok(s.has('visited_wheelroom') && s.has('ghost_wheelroom') && s.board.vision_crane, 'first visit: the captain, a vision and its card');
+    g.click('tide_wheel');
+    assert.match(g.lastLine(), /sea pours off her paddles/);
+    g.click('slate');
+    g.click('hook');
+    assert.ok(s.board.slate && s.board.stay_in_town);
+    const there = g.as('mara');
+    early.push(...there.reactions);
+    assert.equal(s.room, 'lamp', 'Mara is still at home');
+    assert.ok(there.reactions.includes(CROSS_ROOM.visited_wheelroom.line), 'Mara hears Tobin in the wheel chamber');
+    g.as('tobin');
+    assert.equal(s.room, 'wheelroom', 'swapping keeps each character in their area');
+    g.click('wheel_back');
+    assert.equal(s.room, 'cellar');
+    g.click('floor_hatch_wet');
+    assert.equal(g.ghosts.filter((id) => id === 'wheelroom').length, 1, 'the captain appears once per place');
+    g.click('wheel_back');
+  }
 
   // Mara: lamp lit but dim; T6 (a tube choice); the two-hands rheostat.
   const toMara = g.as('mara');
-  assert.ok(toMara.reactions.includes(CROSS_ROOM.valves_set.line), 'Mara reacts to the flood below');
+  assert.ok([...early, ...toMara.reactions].includes(CROSS_ROOM.valves_set.line), 'Mara reacts to the flood below');
   g.click('lamp');
   assert.ok(s.has('lamp_lit') && !s.has('lamp_full'));
   assert.equal(s.roomStates.lamp, 'after');
@@ -357,7 +427,17 @@ function playToSignal(g, { hideLetter = false, hideEnvelope = true, wrongValves 
 
   g.click('window');
   assert.ok(s.has('saw_ship'));
+  assert.ok(s.has('chapter_signal') && s.has('ghost_signal'), 'chapter IV and the captain after the lamp is lit');
   g.click('balcony');
+  if (g.areas) {
+    assert.equal(s.room, 'gallery');
+    g.click('rail');
+    g.click('tally');
+    g.click('mooring');
+    assert.ok(s.board.tally && s.board.cut_rope && s.board.vision_stairs, 'gallery cards');
+    g.click('gallery_back');
+    assert.equal(s.room, 'lamp');
+  }
   assert.ok(s.has('saw_wool') && s.board.wool);
 }
 
@@ -406,7 +486,7 @@ function finish(g, actor) {
 
 /** Plays a whole game and returns it; `truth` sends the ledger and signals CRANE. */
 function fullRun({ truth = true, actor = 'tobin', ...opts } = {}) {
-  const g = makeGame({ policy: opts.policy });
+  const g = makeGame({ policy: opts.policy, areas: opts.areas, raidResult: opts.raidResult });
   playToSignal(g, opts);
   if (truth) {
     g.as('tobin');
@@ -423,8 +503,23 @@ function fullRun({ truth = true, actor = 'tobin', ...opts } = {}) {
     signal(g, 'SOS');
     assert.equal(g.ending, 'cover');
   }
+  if (g.areas) {
+    assert.deepEqual(g.order, ['raid', 'ending'], 'the raid comes between the signal and the ending card');
+    assert.ok(g.state.has('raid_done') && g.state.memo.raid?.tier, 'the raid result is recorded');
+  } else {
+    assert.deepEqual(g.order, ['ending'], 'no raid without a raid view (3D)');
+    assert.ok(!g.state.has('raid_done') && !g.state.memo.raid);
+  }
   const reactions = g.as('tobin')?.reactions ?? [];
   const last = finish(g, actor);
+  if (g.areas) {
+    assert.deepEqual(g.chapters, CHAPTER_ORDER.map((id) => CHAPTERS[id].numeral), 'chapters I-V, once each, in order');
+    const heads = g.state.log.filter((e) => e.kind === 'chapter').map((e) => e.chapter);
+    assert.deepEqual(heads, CHAPTER_ORDER, 'every chapter is in the log');
+  }
+  for (const c of g.state.log.filter((e) => e.kind === 'choice')) {
+    assert.ok(c.options.length >= 2 && c.chosen >= 0 && c.chosen < c.options.length, `choice "${c.text ?? c.who}" keeps its alternatives`);
+  }
   return { g, last, reactions };
 }
 
@@ -462,6 +557,58 @@ function fullRun({ truth = true, actor = 'tobin', ...opts } = {}) {
   assert.equal(last[0][0], 'tobin');
   assert.match(last[0][1], /wash that scarf/);
   console.log('ok  full chain: SOS signalled, final line as Mara (Tobin speaks, cold)');
+}
+
+// ---- side areas, the captain, visions, chapters and the story log ----
+{
+  const { g } = fullRun({ truth: true, actor: 'mara', policy: 'clean' });
+  const s = g.state;
+  assert.deepEqual(new Set(g.walks), new Set(['lamp>gallery', 'gallery>lamp', 'cellar>wheelroom', 'wheelroom>cellar']), 'both side areas entered and left');
+  assert.deepEqual(s.area, { mara: 'lamp', tobin: 'cellar' }, 'the final scene brings both home');
+  assert.equal(new Set(g.ghosts).size, g.ghosts.length, 'each appearance plays once');
+  assert.ok(g.ghosts.length >= 4 && g.ghosts.length <= 6, `4-6 appearances (${g.ghosts.join(', ')})`);
+  for (const id of Object.keys(GHOSTS)) {
+    const def = GHOSTS[id];
+    assert.ok(ROOMS[def.area] && (!def.point || ROOMS[def.area].hotspots.some((h) => h.id === def.point)), `ghost ${id} points at something in ${def.area}`);
+    assert.ok(def.react?.warm && def.react?.cold, `ghost ${id} has both reactions`);
+    assert.doesNotMatch(def.lines.join(' '), /\b(killed|murdered|did it)\b/i, 'the captain never names a killer');
+    if (def.vision) assert.ok(VISIONS[def.vision]?.length, `vision ${def.vision} exists`);
+    for (const card of def.cards ?? []) assert.ok(CARDS[card], `ghost card ${card} exists`);
+  }
+  const pointing = Object.values(GHOSTS).filter((d) => d.point).length;
+  assert.ok(pointing > 0 && pointing < Object.keys(GHOSTS).length, 'he sometimes points, sometimes only stands');
+  const visions = Object.values(GHOSTS).filter((d) => d.vision);
+  assert.ok(visions.length >= 3 && visions.length <= 4, '3-4 appearances bring a vision');
+  for (const d of visions) for (const card of d.cards) assert.ok(s.board[card], `vision card ${card} is on the board`);
+  // The captain's death: four shots, logged once, with its card; it never says who dimmed the lamp.
+  assert.equal(GHOSTS.signal.vision, 'hale');
+  assert.equal(VISIONS.hale.length, 4);
+  assert.deepEqual(VISIONS.hale.map((v) => v.image), ['hale_bridge', 'hale_dark', 'hale_reef', 'hale_last']);
+  for (const shot of VISIONS.hale) assert.ok(shot.captions.length >= 1 && shot.captions.length <= 2 && shot.fallback, 'each Hale shot has 1-2 lines and a fallback still');
+  const haleText = VISIONS.hale.flatMap((v) => v.captions).join(' ');
+  assert.doesNotMatch(haleText, /\b(Tobin|Mara|Elias|Crane)\b/, 'the vision never names who dimmed the lamp');
+  const haleLogged = s.log.filter((e) => e.kind === 'vision' && VISIONS.hale.some((v) => v.captions.includes(e.text)));
+  assert.equal(haleLogged.length, VISIONS.hale.flatMap((v) => v.captions).length, 'Hale\'s vision is logged exactly once');
+  assert.ok(s.board.marigold_last && CARDS.marigold_last.title === 'The Marigold\'s last minutes');
+  assert.equal(g.api.ghost('signal'), false, 'and never plays twice');
+  assert.ok(s.log.some((e) => e.kind === 'ghost' && e.who === 'captain'), 'his lines are logged');
+  assert.ok(s.log.some((e) => e.kind === 'vision'), 'vision captions are logged');
+  const choices = s.log.filter((e) => e.kind === 'choice');
+  assert.ok(choices.length >= 7, `letter, envelope, four tube choices and the signal are logged (${choices.length})`);
+  const signalled = choices.at(-1);
+  assert.deepEqual([signalled.options, signalled.options[signalled.chosen]], [['CRANE', 'SOS'], 'CRANE'], 'the signal is logged with its alternative');
+  for (const e of s.log) assert.ok(CHAPTER_ORDER.includes(e.chapter), 'every log entry belongs to a chapter');
+
+  // Hotspots stay clear of the inventory strip in every area.
+  for (const [id, room] of Object.entries(ROOMS)) {
+    for (const h of room.hotspots) assert.ok(h.y + h.h <= 636, `${id}.${h.id} stays above the inventory`);
+  }
+
+  // 3D has no areas or ghost view: the same chain still completes, the balcony is the old rail.
+  const flat = fullRun({ truth: false, actor: 'tobin', areas: false });
+  assert.ok(flat.g.state.has('saw_wool') && flat.g.walks.length === 0 && flat.g.state.room === 'cellar');
+  assert.ok(flat.g.log.some((l) => /drowned man's voice/.test(l)), 'without a ghost view his lines are spoken as text');
+  console.log('ok  side areas, the captain (once each), visions, chapters I-V and the story log');
 }
 
 // ---- every tube-choice branch completes the chain ----
@@ -806,6 +953,172 @@ function fullRun({ truth = true, actor = 'tobin', ...opts } = {}) {
   g.click('hatch_lamp');
   assert.match(g.lastLine(), /speaking tube/);
   console.log('ok  wrong items are harmless; idle hatch describes itself');
+}
+
+// ---- the cellar floor hatch: lift, go down, come back up ----
+{
+  const g = makeGame();
+  const s = g.state;
+  g.as('tobin');
+  assert.ok(g.visible('floor_hatch') && !g.visible('floor_hatch_wet'), 'dry cellar: the closed trapdoor');
+  g.click('floor_hatch');
+  assert.ok(s.has('hatch_open') && s.room === 'cellar', 'the first click only lifts it');
+  assert.deepEqual(g.effects, ['hatch'], 'with the lifting effect');
+  assert.match(g.lastLine(), /ladder goes down/);
+  assert.ok(!g.visible('floor_hatch') && g.visible('floor_hatch_open'), 'the lifted trapdoor has its own rect');
+  g.click('floor_hatch_open');
+  assert.equal(s.room, 'wheelroom', 'the next click goes down');
+  assert.deepEqual(g.walks, ['cellar>wheelroom']);
+  assert.ok(s.has('visited_wheelroom') && s.has('ghost_wheelroom'));
+  g.click('wheel_back');
+  assert.equal(s.room, 'cellar', 'the wheel chamber\'s way out goes back up the ladder');
+  g.click('floor_hatch_open');
+  assert.equal(s.room, 'wheelroom');
+  assert.deepEqual(g.effects, ['hatch'], 'it is lifted only once');
+  const hatch = ROOMS.cellar.hotspots.find((h) => h.id === 'floor_hatch');
+  const wet = ROOMS.cellar.hotspots.find((h) => h.id === 'floor_hatch_wet');
+  assert.ok(hatch.art === ROOMS.cellar.hatchArt.closed && wet.art === ROOMS.cellar.hatchArt.flooded, 'hatch hotspots need the hatch paintings');
+  assert.equal(ROOMS.cellar.hotspots.find((h) => h.id === 'wheel_door').noArt, ROOMS.cellar.hatchArt.closed, 'the drawn iron door is only the fallback');
+  console.log('ok  floor hatch: lifts once, goes down to the wheel chamber and back up; flooded room has its own');
+}
+
+// ---- the finale raid: schedule, meters, scuffles, tiers, skip and the record ----
+{
+  const sched = schedule(RAID);
+  assert.deepEqual(schedule(RAID), sched, 'the schedule is deterministic per seed');
+  assert.notDeepEqual(schedule(RAID, 7), sched, 'and changes with the seed');
+  assert.ok(sched.every((x, i) => i === 0 || sched[i - 1].at <= x.at), 'sorted by time');
+  for (const front of ['gallery', 'cellar']) {
+    const list = sched.filter((x) => x.front === front);
+    assert.ok(list.length >= 8, `${front} gets a steady stream (${list.length})`);
+    assert.equal(list[0].at, RAID[front].firstMs);
+    assert.ok(list.at(-1).at < RAID.durationMs - 4000, 'nobody arrives in the last seconds');
+    const gaps = list.slice(1).map((x, i) => x.at - list[i].at);
+    assert.ok(gaps.slice(-3).reduce((a, b) => a + b) < gaps.slice(0, 3).reduce((a, b) => a + b), `${front} speeds up`);
+  }
+  const lanes = sched.filter((x) => x.front === 'gallery').map((x) => x.lane);
+  assert.ok(lanes.every((l) => l >= RAID.gallery.lanes[0] && l <= RAID.gallery.lanes[1]), 'climbers stay on the rail');
+
+  assert.equal(tierFor({ damage: 0, scuffles: 0 }), 'clean');
+  assert.equal(tierFor({ damage: RAID.tiers.cleanMaxDamage, scuffles: 0 }), 'clean');
+  assert.equal(tierFor({ damage: RAID.tiers.cleanMaxDamage + 1, scuffles: 0 }), 'bruised');
+  assert.equal(tierFor({ damage: 10, scuffles: 1 }), 'bruised', 'one scuffle is bruised');
+  assert.equal(tierFor({ damage: 10, scuffles: RAID.tiers.batteredScuffles }), 'battered');
+  assert.equal(tierFor({ damage: RAID.tiers.batteredMinDamage, scuffles: 0 }), 'battered');
+
+  // Nobody at the controls: meters empty, scuffles refill them, the light still holds.
+  const afk = new RaidSim(RAID);
+  let lowest = { lamp: 100, cellar: 100 };
+  const events = [];
+  while (!afk.done) {
+    events.push(...afk.update(100));
+    for (const m of ['lamp', 'cellar']) lowest[m] = Math.min(lowest[m], afk.meters[m]);
+    assert.ok(afk.meters.lamp > 0 && afk.meters.cellar > 0, 'a meter never stays empty: no fail state');
+  }
+  assert.ok(Math.abs(afk.time - RAID.durationMs) < 101, 'the cutter arrives on time');
+  assert.equal(afk.cutter, 1);
+  const scuffles = events.filter((e) => e.type === 'scuffle');
+  assert.ok(scuffles.length >= 2 && scuffles.every((e) => e.text === RAID_TEXT.scuffle[e.front]), 'scuffles happen with their line');
+  assert.ok(events.some((e) => e.type === 'hit' && e.front === 'gallery') && events.some((e) => e.type === 'hit' && e.front === 'cellar'), 'both fronts do damage');
+  assert.equal(events.filter((e) => e.type === 'end').length, 1);
+  assert.deepEqual(afk.result(), { tier: 'battered', damage: afk.totalDamage, scuffles: afk.totalScuffles, skipped: false });
+  assert.equal(afk.click(1), null, 'no input after the end');
+
+  // A scuffle refills the meter and clears its front.
+  const sc = new RaidSim(RAID);
+  sc.meters.lamp = 5;
+  sc.wreckers.push({ id: 99, front: 'gallery', state: 'top', lane: 0.5, progress: 1, shoves: 0, lastShove: -1e9, nextHit: 0 });
+  const ev = [];
+  sc.hit('gallery', 12, ev, 99);
+  assert.equal(sc.meters.lamp, RAID.refill);
+  assert.equal(sc.wreckers[0].state, 'falling');
+  assert.equal(sc.scuffles.lamp, 1);
+
+  // A perfect player on both fronts at once keeps the light clean.
+  const ace = new RaidSim(RAID);
+  while (!ace.done) {
+    const beam = new Set(ace.active('gallery').filter((w) => w.state === 'climbing').map((w) => w.id));
+    ace.update(100, { beam });
+    for (const w of ace.active('gallery')) {
+      if (w.state === 'climbing' && w.blind) assert.equal(ace.click(w.id), 'flash');
+      if (w.state === 'top') for (let i = 0; i < RAID.gallery.shoves; i++) ace.click(w.id);
+    }
+    for (const w of ace.active('cellar')) if (ace.inGreen(w)) assert.equal(ace.click(w.id), 'stagger');
+  }
+  assert.equal(ace.result().tier, 'clean', `a quick player stays clean (${ace.totalDamage} damage)`);
+
+  // Clicks: too early on a climber, three quick shoves over the rail, mistimed rings are ignored.
+  const c = new RaidSim(RAID);
+  c.update(RAID.gallery.firstMs);
+  const climber = c.active('gallery')[0];
+  assert.equal(c.click(climber.id), 'early', 'a climber needs the beam first');
+  c.update(RAID.gallery.blindMs + 10, { beam: new Set([climber.id]) });
+  assert.ok(climber.blind && climber.progress < 0.1, 'the beam blinds and slows him');
+  assert.equal(c.click(climber.id), 'flash');
+  const top = { id: 50, front: 'gallery', state: 'top', lane: 0.3, progress: 1, shoves: 0, lastShove: -1e9, nextHit: 1e9 };
+  c.wreckers.push(top);
+  assert.equal(c.click(50), 'push');
+  c.time += RAID.gallery.shoveGapMs + 1;
+  assert.equal(c.click(50), 'push', 'a slow second shove starts the count again');
+  assert.equal(c.click(50), 'push');
+  assert.equal(c.click(50), 'shove');
+  assert.equal(top.state, 'falling');
+  const wader = { id: 60, front: 'cellar', state: 'wading', lane: 0.5, born: c.time, progress: 0.2, shoves: 0, nextHit: 1e9 };
+  c.wreckers.push(wader);
+  assert.ok(!c.inGreen(wader));
+  assert.equal(c.click(60), 'miss', 'a mistimed click is ignored');
+  assert.equal(wader.state, 'wading');
+  c.time += RAID.cellar.ringMs * (1 - (RAID.cellar.green[0] + RAID.cellar.green[1]) / 2);
+  assert.ok(c.inGreen(wader));
+  assert.equal(c.click(60), 'stagger');
+  assert.deepEqual(c.pressure('cellar'), null);
+
+  // Pressure warnings for the off-screen front.
+  const pr = new RaidSim(RAID);
+  pr.update(RAID.gallery.firstMs);
+  assert.equal(pr.pressure('gallery').level, 1);
+  pr.update(RAID.gallery.climbMs);
+  assert.equal(pr.pressure('gallery').level, 2);
+  assert.match(pr.pressure('gallery').text, /over the rail/);
+
+  // Skipping: never better than bruised, recorded as skipped.
+  const sk = new RaidSim(RAID);
+  sk.update(3000);
+  sk.skip();
+  assert.ok(sk.done && sk.active('gallery').length === 0);
+  assert.deepEqual(sk.result(), { tier: 'bruised', damage: 0, scuffles: 0, skipped: true });
+
+  // The record: flags, memo, log lines, once; the ending card gains one line per tier.
+  for (const tier of ['clean', 'bruised', 'battered']) {
+    const g = makeGame();
+    recordRaid(g.state, { tier, damage: 1, scuffles: 0, skipped: false });
+    assert.ok(g.state.has('raid_done') && g.state.has(`raid_${tier}`) && g.state.memo.raid.tier === tier);
+    assert.ok(g.state.log.some((e) => e.text === `${RAID_TEXT.tierLabel[tier]}.`), 'the tier is logged');
+    for (const id of ['truth', 'cover']) assert.ok(endingCard(g.state, id).text.includes(RAID_TEXT.ending[tier]), `${tier} line in the ${id} card`);
+    for (const other of ['clean', 'bruised', 'battered'].filter((t) => t !== tier)) assert.ok(!endingCard(g.state, 'truth').text.includes(RAID_TEXT.ending[other]));
+    const before = g.state.log.length;
+    recordRaid(g.state, { tier: 'clean', damage: 0, scuffles: 0, skipped: false });
+    assert.equal(g.state.log.length, before, 'recorded once');
+    let ran = 0;
+    g.api.raid(() => ran++);
+    assert.equal(ran, 1, 'a finished raid is never replayed');
+  }
+  const skipped = makeGame();
+  recordRaid(skipped.state, sk.result());
+  assert.ok(skipped.state.has('raid_skipped') && skipped.state.log.some((e) => e.text === RAID_TEXT.skipped));
+  assert.ok(!endingCard(makeGame().state, 'truth').text.includes('wreckers'), 'no raid, no raid line');
+
+  // Both endings still complete after each tier.
+  for (const tier of ['clean', 'battered']) {
+    for (const truth of [true, false]) {
+      const { g } = fullRun({ truth, actor: truth ? 'tobin' : 'mara', raidResult: { tier, damage: 0, scuffles: 0, skipped: false } });
+      assert.equal(g.state.memo.raid.tier, tier);
+      assert.ok(endingCard(g.state, truth ? 'truth' : 'cover').text.includes(RAID_TEXT.ending[tier]));
+    }
+  }
+  const src = readFileSync(new URL('../src/systems/Raid.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /\bPhaser\.|from ['"]phaser/, 'raid rules never depend on Phaser');
+  console.log('ok  raid: deterministic schedule, beam and ring clicks, scuffle refills, tiers, skip, recorded once, every ending completes');
 }
 
 console.log('\nAll puzzle-chain checks passed.');

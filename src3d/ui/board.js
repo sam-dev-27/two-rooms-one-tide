@@ -60,7 +60,7 @@ function renderBoard(ui, c) {
   let reaction = null;
   let dragEndedAt = -Infinity;
 
-  text(root, `Between them: ${trustLabel(state)}`, { x: x + w - 160, y: y + 33, ox: 1, oy: 0.5, size: 16, italic: true, color: MUTED });
+  text(root, `Between them: ${trustLabel(state)}`, { x: x + w - 160, y: y + 33, ox: 1, oy: 0.5, size: 16, color: MUTED });
   const trayEl = el('div', { cls: 'tray', attrs: { 'data-column': '' }, parent: root, style: { left: tray.x, top: tray.y, width: tray.w, height: tray.h } });
   text(root, 'Clues', { x: tray.x, y: tray.y - 24, size: 17, color: MUTED });
   const colEls = cols.map((col) => {

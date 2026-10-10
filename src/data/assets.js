@@ -7,6 +7,49 @@ export const ROOM_IMAGES = {
   lamp_lowtide: 'assets/rooms/lamp_lowtide.png',
   cellar_before: 'assets/rooms/cellar_before.png',
   cellar_after: 'assets/rooms/cellar_after.png',
+  // Side areas (made with another image tool; see docs/other-ai-art.csv).
+  gallery: 'assets/rooms/gallery.png',
+  gallery_lit: 'assets/rooms/gallery_lit.png',
+  wheelroom: 'assets/rooms/wheelroom.png',
+  wheelroom_flooded: 'assets/rooms/wheelroom_flooded.png',
+};
+
+// The cellar with its wooden floor hatch: closed, lifted, and lifted in the flooded room. If the
+// closed one is missing the cellar falls back to cellar_before/after and an iron door drawn in code.
+export const HATCH_IMAGES = {
+  cellar_hatch: 'assets/rooms/cellar_hatch.png',
+  cellar_hatch_open: 'assets/rooms/cellar_hatch_open.png',
+  cellar_after_hatch: 'assets/rooms/cellar_after_hatch.png',
+};
+
+// Captain Hale on pure black, drawn with additive blending so the black disappears.
+export const GHOST_IMAGES = {
+  captain: 'assets/ghost/captain.png',
+  captain_point: 'assets/ghost/captain_point.png',
+};
+
+// Flashback stills for the captain's visions; missing ones fall back to existing art (VISIONS in cutscenes.js).
+export const VISION_IMAGES = {
+  vision_dim: 'assets/visions/vision_dim.png',
+  vision_marigold: 'assets/visions/vision_marigold.png',
+  vision_stairs: 'assets/visions/vision_stairs.png',
+  vision_crane: 'assets/visions/vision_crane.png',
+  // How Captain Hale died: the Marigold's last minutes.
+  hale_bridge: 'assets/cutscene/hale_bridge.png',
+  hale_dark: 'assets/cutscene/hale_dark.png',
+  hale_reef: 'assets/cutscene/hale_reef.png',
+  hale_last: 'assets/cutscene/hale_last.png',
+};
+
+// The finale raid: Crane's wreckers as transparent cutouts (trimmed like the characters; a drawn
+// stand-in if missing), and the still of their boats rowing in (falls back to cut_rowboat).
+export const RAIDER_IMAGES = {
+  wrecker: 'assets/characters/wrecker.png',
+  wrecker_climb: 'assets/characters/wrecker_climb.png',
+  wrecker_shove: 'assets/characters/wrecker_shove.png',
+};
+export const RAID_STILLS = {
+  wreckers_boats: 'assets/cutscene/wreckers_boats.png',
 };
 
 export const CHARACTER_IMAGES = {

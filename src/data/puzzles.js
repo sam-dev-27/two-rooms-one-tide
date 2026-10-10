@@ -6,8 +6,12 @@
 //        valve wheels (flood, power, evidence) -> lamp lit dim -> Tobin holds the rheostat at FULL while
 //        Mara latches the lamp (two hands, 8 s) -> ledger up ->
 //        Morse shutter (CRANE or SOS) -> ending card -> final scene at the plate and the hatch.
+//
+// Side areas (gallery, wheel chamber), Captain Hale and the chapter cards hang off this chain but
+// never gate it: every ghost, vision and card is optional.
 import { ITEMS } from './items.js';
-import { TALKS, finalLine, HOLD_TEXT, LIGHTNING_TEXT } from './text.js';
+import { TALKS, finalLine, HOLD_TEXT, LIGHTNING_TEXT, AREA_ENTRY, AREA_RETURN } from './text.js';
+import { HOOK } from './story.js';
 
 const DRAWER_CODE = '1874';
 export const HOLD_MS = 8000;
@@ -80,11 +84,14 @@ function openValves(api) {
       }
       api.set('valves_set');
       api.set('prints_gone');
+      // The flooded painting shows the floor hatch lifted, so the story agrees with it.
+      api.set('hatch_open');
       api.sfx('flood');
       api.setRoomState('cellar', 'after');
-      api.say('Blue, yellow, red, green, white. The pipes shudder and the sea pours in, knee-deep and freezing.');
+      api.narrate('Blue, yellow, red, green, white. The pipes shudder and the sea pours in, knee-deep and freezing.');
       api.say('Behind the wall, the tide wheel starts to turn.');
       api.say('Something bobs to the surface: a loose floorboard.');
+      api.ghost('flood');
       return true;
     },
   });
@@ -101,16 +108,40 @@ function openMorse(api) {
     onDone(word) {
       const id = word === 'CRANE' ? 'truth' : 'cover';
       api.set(id === 'truth' ? 'signalled_truth' : 'signalled_sos');
-      api.ending(id, () => beginFinal(api));
+      api.logChoice('mara', 'Signal to the cutter', ['CRANE', 'SOS'], word === 'CRANE' ? 0 : 1);
+      api.raid(() => api.ending(id, () => beginFinal(api)));
     },
   });
 }
 
 function beginFinal(api) {
   api.set('final_phase');
+  api.homeAll();
   api.swapTo('tobin');
   api.refresh();
-  api.say('The lamp runs at full power for the first time. Light pours down the weight-well, brighter than you have ever seen it.');
+  api.chapter('low', () => api.narrate('The lamp runs at full power for the first time. Light pours down the weight-well, brighter than you have ever seen it.'));
+}
+
+/** After the opening: chapter one, then the tube exchange that sets the stakes. */
+export function startStory(api, then) {
+  api.chapter('log', () => api.talk(HOOK, then));
+}
+
+/** Walking through a door into another area. First visits get a line and the captain. */
+function enterArea(api, to) {
+  if (!api.goTo(to)) return false;
+  const area = api.area;
+  if (!AREA_ENTRY[area]) return true;
+  if (!api.has(`visited_${area}`)) {
+    api.set(`visited_${area}`);
+    api.narrate(AREA_ENTRY[area]);
+    api.ghost(area);
+    return true;
+  }
+  const n = api.memo(`return_${area}`, 0);
+  api.remember(`return_${area}`, n + 1);
+  if (n % 3 === 0) api.say(AREA_RETURN[area][(n / 3) % AREA_RETURN[area].length]);
+  return true;
 }
 
 function concealChoice(api, { item, title, text, keep, tell, hiddenFlag, toldFlag, hiddenText, toldText }) {
@@ -128,6 +159,7 @@ function concealChoice(api, { item, title, text, keep, tell, hiddenFlag, toldFla
           api.set(hiddenFlag);
           api.adjustTrust(-1);
           api.consume(item);
+          api.logChoice(api.actor, title, [keep, tell], 0);
           api.say(hiddenText);
         },
       },
@@ -137,6 +169,7 @@ function concealChoice(api, { item, title, text, keep, tell, hiddenFlag, toldFla
         onSelect: () => {
           api.set(toldFlag);
           api.adjustTrust(1);
+          api.logChoice(api.actor, title, [keep, tell], 1);
           api.say(toldText);
         },
       },
@@ -166,11 +199,12 @@ export const lightningPending = (api) => api.has('valves_set') && !api.has('saw_
 /** A lightning strike. Mara sees the salt writing if she is the one in front of the window. */
 export function lightningStrike(api) {
   if (!lightningPending(api)) return null;
-  if (api.actor !== 'mara') return 'missed';
+  if (api.actor !== 'mara' || api.area !== 'lamp') return 'missed';
   api.set('saw_boats');
   api.card('two_boats');
   api.note('boats', 'Lightning lit up writing traced in the salt on the lamp-room window: TWO BOATS THURS.');
-  for (const line of LIGHTNING_TEXT.seen) api.say(line);
+  for (const line of LIGHTNING_TEXT.seen) api.narrate(line);
+  api.ghost('lightning');
   return 'seen';
 }
 
@@ -190,9 +224,10 @@ export const HANDLERS = {
       'Elias\'s log, names in flash-code: "−·−·\'s men on the rocks again" (C: Crane). "Tell −− everything Thursday." "The drawer code is chalked below." "The well flips everything."',
     );
     api.say('Elias\'s logbook. He wrote names in flash-code, like a signaller.');
-    api.say('"−·−·\'s men on the rocks again." Dash-dot-dash-dot. C. Crane.');
-    api.say('"Tell −− everything Thursday." "The drawer code is chalked below." And the last line: "The well flips everything."');
+    api.narrate('"−·−·\'s men on the rocks again." Dash-dot-dash-dot. C. Crane.');
+    api.narrate('"Tell −− everything Thursday." "The drawer code is chalked below." And the last line: "The well flips everything."');
     api.toast('swap', 'swap');
+    api.ghost('logbook');
   },
 
   drawer(api, item) {
@@ -238,7 +273,8 @@ export const HANDLERS = {
       api.consume('fuse');
       api.set('fuse_fitted');
       api.sfx('unlock');
-      return api.say('The fuse seats with a click. Nothing. No current: the tide wheel below must not be turning.');
+      api.say('The fuse seats with a click. Nothing. No current: the tide wheel below must not be turning.');
+      return api.chapter('water');
     }
     if (item) return api.wrongItem();
     if (!api.has('lens_set')) {
@@ -267,8 +303,8 @@ export const HANDLERS = {
       api.lockTide();
       api.sfx('unlock');
       api.refresh();
-      for (const line of HOLD_TEXT.latch) api.say(line);
-      api.cutscene('lamplit');
+      for (const line of HOLD_TEXT.latch) api.narrate(line);
+      api.cutscene('lamplit', () => api.chapter('signal', () => api.ghost('signal')));
       return;
     }
     if (api.has('signalled_truth') || api.has('signalled_sos')) return api.say('The great lamp blazes.');
@@ -294,16 +330,103 @@ export const HANDLERS = {
     api.say('The reef is gone under black water. That\'s when it kills.');
   },
 
+  // The gallery door. Without side areas (the 3D view) it is the old locked balcony with the wool.
   balcony(api, item) {
     if (item) return api.wrongItem();
+    if (enterArea(api, 'gallery')) return;
     if (!api.has('lamp_full')) {
       return api.say('Locked tight. The latch is wired into the lamp circuit. It only releases when the light runs at full.');
     }
+    HANDLERS.rail(api, null);
+  },
+
+  exit(api, item) {
+    if (item) return api.wrongItem();
+    if (!enterArea(api, api.hotspot.to)) api.say('Not now. There\'s enough to do in here.');
+  },
+
+  // The wooden trapdoor down to the tide-wheel chamber: the first click lifts it, the next goes down.
+  floor_hatch(api, item) {
+    if (item) return api.wrongItem();
+    if (!api.has('hatch_open')) {
+      api.set('hatch_open');
+      api.sfx('creak');
+      api.effect('hatch');
+      api.say('You get your fingers through the iron ring and heave. The trapdoor groans up on its hinges.');
+      api.say('A ladder goes down into the dark. Up the shaft comes the slow creak of the tide wheel.');
+      return;
+    }
+    if (!enterArea(api, 'wheelroom')) api.say('Not now. There\'s enough to do up here.');
+  },
+
+  // ---- Mara, the gallery ----
+  rail(api, item) {
+    if (item) return api.wrongItem();
+    if (api.has('saw_wool')) return api.say('The rail he fell from. The rivet where the wool was caught is bright with rust.');
     api.set('saw_wool');
     api.card('wool');
-    api.note('wool', 'A tuft of red wool snagged on the balcony rail, where Elias went over.');
-    api.say('Wind and spray. On the rail he fell from, a tuft of red wool is snagged on a rivet.');
+    api.note('wool', 'A tuft of red wool snagged on the gallery rail, where Elias went over.');
+    api.narrate('Wind and spray. On the rail he fell from, a tuft of red wool is snagged on a rivet.');
     api.say('Your hand goes to your scarf before you can stop it.');
+  },
+
+  tally(api, item) {
+    if (item) return api.wrongItem();
+    if (!api.has('saw_tally')) {
+      api.set('saw_tally');
+      api.card('tally');
+      api.note('tally', 'Nine tally marks cut into the lamp-room window frame out on the gallery. The last two look new.');
+    }
+    api.say('Nine tally marks scratched into the paint of the window frame, the way you\'d count days. Or ships.');
+    api.narrate('The last two are bright and new. Somebody added to the count not long ago.');
+  },
+
+  mooring(api, item) {
+    if (item) return api.wrongItem();
+    if (!api.has('saw_rope')) {
+      api.set('saw_rope');
+      api.card('cut_rope');
+      api.note('rope', 'Below the gallery, two mooring rings. My boat on one; on the other, a rope end cut clean.');
+    }
+    api.say('Below, the landing stage and two iron mooring rings. Your boat knocks against the rocks on one of them.');
+    api.narrate('On the other ring, a rope end, cut clean through with a knife. Somebody left in a hurry on Thursday.');
+  },
+
+  // ---- Tobin, the tide-wheel chamber ----
+  tide_wheel(api, item) {
+    if (item) return api.wrongItem();
+    if (!api.has('valves_set')) {
+      return api.say('The tide wheel: twenty feet of oak paddles and iron, barely creaking in a trickle. Until the valves are set, the sea can\'t drive it.');
+    }
+    api.say('Gertie turns, fast and enormous, and the sea pours off her paddles. Somewhere above, the lamp drinks her current.');
+  },
+
+  dynamo(api, item) {
+    if (item) return api.wrongItem();
+    if (!api.has('valves_set')) return api.say('The brass dynamo, belted to the wheel\'s axle. Cold. Elias polished it every Sunday.');
+    api.say('The dynamo whines and sparks. Every bit of light up top comes out of this brass drum.');
+  },
+
+  slate(api, item) {
+    if (item) return api.wrongItem();
+    if (!api.has('saw_slate')) {
+      api.set('saw_slate');
+      api.card('slate');
+      api.note('slate', 'Elias\'s maintenance slate on the wheel-chamber bench: "wheel slowed" against nine dates. Every one a wreck night.');
+    }
+    api.say('Under the tools on the bench, Elias\'s maintenance slate. Oiling days, paddle repairs, and down one side, nine dates, each marked "wheel slowed".');
+    api.narrate('You know those dates. Every one of them is the night a ship was lost on the reef.');
+  },
+
+  hook(api, item) {
+    if (item) return api.wrongItem();
+    if (!api.has('saw_hook')) {
+      api.set('saw_hook');
+      api.card('stay_in_town');
+      api.note('hook', 'Folded behind the wall lantern in the wheel chamber, a note from Elias: "T. — not Thursday. Stay in town. — E."');
+    }
+    api.say('The old hurricane lantern on its hook. Folded behind it, where only you would ever reach, a note.');
+    api.narrate('"T. — not Thursday. Stay in town. — E." He wanted you away that night.');
   },
 
   // ---- Tobin, cellar ----
@@ -398,7 +521,7 @@ export const HANDLERS = {
   plank(api, item) {
     if (item) return api.wrongItem();
     api.set('evidence_found');
-    api.closeup('ledger');
+    api.closeup('ledger', () => api.chapter('tide'));
     api.note('evidence', 'Under the cellar floor: a photograph of Crane watching the Marigold sink, and a ledger of insurance payouts for ships "lost to the Triangle".');
     api.say('Under the floating plank, a hollow in the floor. Wrapped in oilskin: a photograph of Harbourmaster Crane watching a ship go down, and a ledger of insurance payouts.');
     api.give('photo');

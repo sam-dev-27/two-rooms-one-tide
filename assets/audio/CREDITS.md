@@ -14,6 +14,8 @@ Every sound below is CC0 (public domain). Files were trimmed, mixed down to mono
 | win.mp3 | Ending | `jingles_SAX07.ogg` from [Music Jingles](https://kenney.nl/assets/music-jingles) | Kenney (www.kenney.nl) | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | swap.mp3 | Switching character | `bookFlip1.ogg` from [RPG Audio](https://kenney.nl/assets/rpg-audio) | Kenney (www.kenney.nl) | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) |
 
+The floor hatch and finale raid sounds (creak, splash, thud, shove, flashbeam, shout, horn) have no files: they are synthesized in `src/systems/Sfx.js`. Drop in an mp3 with the matching name to replace one.
+
 More CC0 sources (no attribution required, but credit them anyway):
 
 - Kenney: https://kenney.nl/assets (Interface Sounds, Impact Sounds, RPG Audio)
